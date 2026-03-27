@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../theme/ThemeContext';
-import { getSoilRecommendation, chatWithAI } from '../../services/groq';
+import { getNPKSoilRecommendation, getSoilRecommendation, chatWithAI } from '../../services/groq';
 
 const AIScreen: React.FC = () => {
   const { sensorData, selectedPlant, chatMessages, addChatMessage, setChatMessages, soilRecommendations, addSoilRecommendation } = useApp();
@@ -85,25 +85,55 @@ const AIScreen: React.FC = () => {
   const handleGetSoilRecommendation = async () => {
     if (!sensorData || isLoading) return;
     setIsLoading(true);
-    
+
     try {
       const soilMoisture = sensorData.soilMoisture[`pot${selectedPot}` as keyof typeof sensorData.soilMoisture] as number;
+      
+      // Check if NPK data is available
+      const npkData = sensorData.npk?.[`pot${selectedPot}` as keyof NonNullable<typeof sensorData.npk>];
+      
+      if (npkData) {
+        // Use NPK-based recommendation
+        const result = await getNPKSoilRecommendation({
+          potNumber: selectedPot,
+          soilMoisture,
+          npk: npkData as { nitrogen: number; phosphorus: number; potassium: number },
+          plant: selectedPlant,
+          temperature: sensorData.temperature,
+          humidity: sensorData.humidity,
+        });
 
-      const recommendation = await getSoilRecommendation({
-        potNumber: selectedPot,
-        soilMoisture,
-        plant: selectedPlant,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-      });
+        const newRecommendation = {
+          id: Date.now().toString(),
+          potNumber: selectedPot,
+          recommendation: result.recommendation,
+          npkData: {
+            nitrogen: npkData.nitrogen,
+            phosphorus: npkData.phosphorus,
+            potassium: npkData.potassium,
+          },
+          fertilizerAdvice: result.fertilizerAdvice,
+          timestamp: Date.now(),
+        } as any;
+        addSoilRecommendation(newRecommendation);
+      } else {
+        // Fallback to moisture-only recommendation
+        const recommendation = await getSoilRecommendation({
+          potNumber: selectedPot,
+          soilMoisture,
+          plant: selectedPlant,
+          temperature: sensorData.temperature,
+          humidity: sensorData.humidity,
+        });
 
-      const newRecommendation = {
-        id: Date.now().toString(),
-        potNumber: selectedPot,
-        recommendation,
-        timestamp: Date.now(),
-      };
-      addSoilRecommendation(newRecommendation);
+        const newRecommendation = {
+          id: Date.now().toString(),
+          potNumber: selectedPot,
+          recommendation,
+          timestamp: Date.now(),
+        };
+        addSoilRecommendation(newRecommendation);
+      }
     } catch (error) {
       alert('Failed to get recommendation. Please try again.');
     } finally {
@@ -271,8 +301,13 @@ const AIScreen: React.FC = () => {
             end={{ x: 1, y: 1 }}
             style={styles.soilCard}
           >
-            <Text style={styles.soilCardTitle}>Soil Recommendation</Text>
-            <Text style={styles.soilCardSubtitle}>Get AI-powered soil analysis based on current conditions</Text>
+            <View style={styles.soilCardHeader}>
+              <View>
+                <Text style={styles.soilCardTitle}>NPK Soil Analysis</Text>
+                <Text style={styles.soilCardSubtitle}>AI-powered fertilizer recommendations based on NPK sensor data</Text>
+              </View>
+              <Ionicons name="leaf" size={40} color="#fff" style={styles.soilCardIcon} />
+            </View>
 
             <View style={styles.potSelector}>
               <Text style={styles.potSelectorLabel}>Select Pot:</Text>
@@ -295,19 +330,75 @@ const AIScreen: React.FC = () => {
             </View>
 
             {sensorData && (
-              <View style={styles.currentReading}>
-                <Text style={styles.readingLabel}>Current Soil Moisture:</Text>
-                <LinearGradient
-                  colors={['#4CAF50', '#66BB6A']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.readingValueBg}
-                >
-                  <Text style={styles.readingValue}>
-                    {(sensorData.soilMoisture as any)[`pot${selectedPot}`].toFixed(1)}%
-                  </Text>
-                </LinearGradient>
-              </View>
+              <>
+                {/* NPK Readings Display */}
+                <View style={styles.npkContainer}>
+                  <Text style={styles.npkTitle}>NPK Sensor Readings</Text>
+                  <View style={styles.npkReadings}>
+                    <View style={styles.npkItem}>
+                      <View style={[styles.npkIcon, { backgroundColor: '#4CAF50' }]}>
+                        <Text style={styles.npkIconText}>N</Text>
+                      </View>
+                      <View style={styles.npkValue}>
+                        <Text style={styles.npkLabel}>Nitrogen</Text>
+                        <Text style={styles.npkValueText}>
+                          {sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] 
+                            ? (sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] as any).nitrogen 
+                            : '--'} mg/kg
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.npkItem}>
+                      <View style={[styles.npkIcon, { backgroundColor: '#FF9800' }]}>
+                        <Text style={styles.npkIconText}>P</Text>
+                      </View>
+                      <View style={styles.npkValue}>
+                        <Text style={styles.npkLabel}>Phosphorus</Text>
+                        <Text style={styles.npkValueText}>
+                          {sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] 
+                            ? (sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] as any).phosphorus 
+                            : '--'} mg/kg
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.npkItem}>
+                      <View style={[styles.npkIcon, { backgroundColor: '#9C27B0' }]}>
+                        <Text style={styles.npkIconText}>K</Text>
+                      </View>
+                      <View style={styles.npkValue}>
+                        <Text style={styles.npkLabel}>Potassium</Text>
+                        <Text style={styles.npkValueText}>
+                          {sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] 
+                            ? (sensorData.npk?.[`pot${selectedPot}` as keyof typeof sensorData.npk] as any).potassium 
+                            : '--'} mg/kg
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Soil Moisture Display */}
+                <View style={styles.currentReading}>
+                  <Text style={styles.readingLabel}>Current Soil Moisture:</Text>
+                  <LinearGradient
+                    colors={['#4CAF50', '#66BB6A']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.readingValueBg}
+                  >
+                    <Text style={styles.readingValue}>
+                      {(sensorData.soilMoisture as any)[`pot${selectedPot}`].toFixed(1)}%
+                    </Text>
+                  </LinearGradient>
+                </View>
+
+                {!sensorData.npk && (
+                  <View style={styles.npkWarning}>
+                    <Ionicons name="warning" size={20} color="#FF9800" />
+                    <Text style={styles.npkWarningText}>NPK sensor not detected. Showing moisture-only analysis.</Text>
+                  </View>
+                )}
+              </>
             )}
 
             <TouchableOpacity
@@ -354,7 +445,33 @@ const AIScreen: React.FC = () => {
                       {new Date(rec.timestamp).toLocaleString()}
                     </Text>
                   </View>
-                  <Text style={[styles.historyRecommendation, { color: colors.text }]}>{rec.recommendation}</Text>
+                  
+                  {/* NPK Data Display if available */}
+                  {rec.npkData && (
+                    <View style={styles.historyNPK}>
+                      <View style={styles.historyNPKItem}>
+                        <Text style={[styles.historyNPKLabel, { color: '#4CAF50' }]}>N: {rec.npkData.nitrogen}</Text>
+                      </View>
+                      <View style={styles.historyNPKItem}>
+                        <Text style={[styles.historyNPKLabel, { color: '#FF9800' }]}>P: {rec.npkData.phosphorus}</Text>
+                      </View>
+                      <View style={styles.historyNPKItem}>
+                        <Text style={[styles.historyNPKLabel, { color: '#9C27B0' }]}>K: {rec.npkData.potassium}</Text>
+                      </View>
+                    </View>
+                  )}
+                  
+                  <Text style={[styles.historyRecommendation, { color: colors.text, fontWeight: '600' }]}>
+                    {rec.recommendation}
+                  </Text>
+                  {rec.fertilizerAdvice && (
+                    <View style={styles.fertilizerAdviceBox}>
+                      <Ionicons name="fitness" size={18} color={colors.primary} />
+                      <Text style={[styles.historyFertilizerAdvice, { color: colors.textSecondary }]}>
+                        {rec.fertilizerAdvice}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -394,29 +511,47 @@ const styles = StyleSheet.create({
   sendButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   soilContainer: { flex: 1 },
   soilCard: { margin: 16, padding: 24, borderRadius: 20 },
-  soilCardTitle: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 8 },
-  soilCardSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 24, lineHeight: 20 },
-  potSelector: { marginBottom: 24 },
-  potSelectorLabel: { fontSize: 14, fontWeight: '700', color: '#fff', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
+  soilCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  soilCardIcon: { marginLeft: 12 },
+  soilCardTitle: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 4 },
+  soilCardSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
+  potSelector: { marginBottom: 20 },
+  potSelectorLabel: { fontSize: 13, fontWeight: '700', color: '#fff', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   potButtons: { flexDirection: 'row', gap: 12 },
-  potButton: { flex: 1, padding: 16, borderRadius: 14, borderWidth: 2, alignItems: 'center' },
-  potButtonText: { fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  currentReading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', padding: 18, borderRadius: 14, marginBottom: 20 },
-  readingLabel: { fontSize: 14, color: 'rgba(255,255,255,0.8)', fontWeight: '500', flexShrink: 1 },
-  readingValueBg: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  readingValue: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  getRecommendationButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: 18, borderRadius: 14, gap: 12 },
-  getRecommendationText: { fontSize: 16, fontWeight: '800', color: '#11998e', textAlign: 'center' },
+  potButton: { flex: 1, padding: 14, borderRadius: 14, borderWidth: 2, alignItems: 'center' },
+  potButtonText: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  npkContainer: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 18, borderRadius: 16, marginBottom: 16 },
+  npkTitle: { fontSize: 13, fontWeight: '700', color: '#fff', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
+  npkReadings: { gap: 12 },
+  npkItem: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  npkIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  npkIconText: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  npkValue: { flex: 1 },
+  npkLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
+  npkValueText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  currentReading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', padding: 16, borderRadius: 14, marginBottom: 16 },
+  readingLabel: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '500', flexShrink: 1 },
+  readingValueBg: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10 },
+  readingValue: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  npkWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,152,0,0.2)', padding: 14, borderRadius: 12, gap: 10, marginBottom: 16 },
+  npkWarningText: { flex: 1, fontSize: 13, color: '#FF9800', lineHeight: 18 },
+  getRecommendationButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 14, gap: 10 },
+  getRecommendationText: { fontSize: 15, fontWeight: '800', color: '#11998e', textAlign: 'center' },
   historyCard: { margin: 16, padding: 20, borderRadius: 20, borderWidth: 1 },
   historyHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 12 },
   historyIconBg: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  historyTitle: { fontSize: 18, fontWeight: '700', flexShrink: 1 },
-  historyItem: { paddingVertical: 16 },
-  historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  historyTitle: { fontSize: 17, fontWeight: '700', flexShrink: 1 },
+  historyItem: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+  historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   historyPotBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
   historyPotText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   historyDate: { fontSize: 12, flexShrink: 1 },
-  historyRecommendation: { fontSize: 14, lineHeight: 22 },
+  historyNPK: { flexDirection: 'row', gap: 16, marginBottom: 12 },
+  historyNPKItem: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 8 },
+  historyNPKLabel: { fontSize: 13, fontWeight: '700' },
+  historyRecommendation: { fontSize: 14, lineHeight: 22, marginBottom: 12 },
+  fertilizerAdviceBox: { flexDirection: 'row', gap: 10, backgroundColor: '#E8F5E9', padding: 14, borderRadius: 12, marginTop: 8 },
+  historyFertilizerAdvice: { flex: 1, fontSize: 13, lineHeight: 20 },
   bottomPadding: { height: 40 },
 });
 

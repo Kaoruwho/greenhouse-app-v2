@@ -6,6 +6,11 @@ export interface SensorData {
     pot2: number;
     pot3: number;
   };
+  npk?: {
+    pot1: { nitrogen: number; phosphorus: number; potassium: number };
+    pot2: { nitrogen: number; phosphorus: number; potassium: number };
+    pot3: { nitrogen: number; phosphorus: number; potassium: number };
+  };
   timestamp: number;
 }
 
@@ -44,6 +49,24 @@ export interface SoilRecommendation {
   id: string;
   potNumber: number;
   recommendation: string;
+  npkData?: {
+    nitrogen: number;
+    phosphorus: number;
+    potassium: number;
+  };
+  timestamp: number;
+}
+
+export interface NPKRecommendation {
+  id: string;
+  potNumber: number;
+  npkData: {
+    nitrogen: number;
+    phosphorus: number;
+    potassium: number;
+  };
+  recommendation: string;
+  fertilizerAdvice: string;
   timestamp: number;
 }
 

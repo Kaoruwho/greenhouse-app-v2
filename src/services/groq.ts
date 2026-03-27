@@ -2,7 +2,7 @@ import Groq from 'groq-sdk';
 import { GROQ_API_KEY } from '../config';
 import { SensorData, Plant } from '../types';
 
-const groq = new Groq({ 
+const groq = new Groq({
   apiKey: GROQ_API_KEY,
   dangerouslyAllowBrowser: true // Required for web/browser usage
 });
@@ -15,6 +15,101 @@ export interface SoilAnalysisRequest {
   humidity: number;
 }
 
+export interface NPKAnalysisRequest {
+  potNumber: number;
+  soilMoisture: number;
+  npk: {
+    nitrogen: number;
+    phosphorus: number;
+    potassium: number;
+  };
+  plant: Plant;
+  temperature: number;
+  humidity: number;
+}
+
+/**
+ * Get AI-powered soil recommendation based on NPK sensor data
+ */
+export const getNPKSoilRecommendation = async ({
+  potNumber,
+  soilMoisture,
+  npk,
+  plant,
+  temperature,
+  humidity,
+}: NPKAnalysisRequest): Promise<{ recommendation: string; fertilizerAdvice: string }> => {
+  try {
+    const prompt = `You are an AI assistant for a smart greenhouse with NPK soil sensors. Analyze the following soil conditions and provide detailed fertilizer recommendations:
+
+Plant: ${plant.name}
+Pot Number: ${potNumber}
+Current Soil Moisture: ${soilMoisture}%
+NPK Readings:
+- Nitrogen (N): ${npk.nitrogen} mg/kg
+- Phosphorus (P): ${npk.phosphorus} mg/kg
+- Potassium (K): ${npk.potassium} mg/kg
+Current Temperature: ${temperature}°C
+Current Humidity: ${humidity}%
+
+Optimal conditions for ${plant.name}:
+- Temperature: ${plant.optimalTemp.min}°C - ${plant.optimalTemp.max}°C
+- Humidity: ${plant.optimalHumidity.min}% - ${plant.optimalHumidity.max}%
+- Soil Moisture: ${plant.optimalSoilMoisture.min}% - ${plant.optimalSoilMoisture.max}%
+
+NPK Reference Ranges (mg/kg):
+- Nitrogen: Low (<50), Medium (50-100), High (>100)
+- Phosphorus: Low (<20), Medium (20-40), High (>40)
+- Potassium: Low (<100), Medium (100-200), High (>200)
+
+Provide a JSON response with exactly this structure:
+{
+  "recommendation": "Brief analysis of current soil condition (2-3 sentences)",
+  "fertilizerAdvice": "Specific fertilizer recommendation with NPK ratio and application instructions (3-4 sentences)"
+}
+
+Consider:
+1. Which nutrients are deficient or excessive for this plant type
+2. How soil moisture affects nutrient availability
+3. Specific fertilizer type and NPK ratio recommended
+4. Application frequency and dosage guidance`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+
+    const content = completion.choices[0]?.message?.content || '{}';
+    
+    // Try to parse JSON from response
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          recommendation: parsed.recommendation || 'Unable to get recommendation. Please try again.',
+          fertilizerAdvice: parsed.fertilizerAdvice || 'No specific fertilizer advice available.'
+        };
+      }
+    } catch (e) {
+      // If JSON parsing fails, return the raw response
+    }
+    
+    return {
+      recommendation: content,
+      fertilizerAdvice: 'No specific fertilizer advice available.'
+    };
+  } catch (error) {
+    console.error('Error getting NPK recommendation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Legacy function - kept for backward compatibility
+ */
 export const getSoilRecommendation = async ({
   potNumber,
   soilMoisture,
