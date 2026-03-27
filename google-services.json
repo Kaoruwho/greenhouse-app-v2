@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "121990576473",
+    "firebase_url": "https://greenhouse-67568-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "greenhouse-67568",
+    "storage_bucket": "greenhouse-67568.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:121990576473:android:aa9c03b46922ed42513448",
+        "android_client_info": {
+          "package_name": "com.kaoruwho.greenhouseapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAO2wqIEY7PiATYMDNy3TompZy0nV09vHY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
