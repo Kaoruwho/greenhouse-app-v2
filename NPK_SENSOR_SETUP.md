@@ -34,12 +34,14 @@ B- (TX-)    -> RS485 Module B
 ```
 RS485 Module   ESP32
 ------------   -----
-VCC         -> 5V
+VCC         -> 3.3V (or 5V depending on module)
 GND         -> GND
 RO (Receiver) -> GPIO 16 (RX2)
 DI (Driver)   -> GPIO 17 (TX2)
-DE/RE       -> GPIO 5
+DE/RE       -> GPIO 18  (IMPORTANT: This is GPIO 18, not 5!)
 ```
+
+**Note:** From the working test code, the DE/RE pin is GPIO 18. Make sure to update this!
 
 ### DHT22 Sensor
 
@@ -119,38 +121,59 @@ Open Arduino IDE and install these libraries via Library Manager:
 2. **DHT sensor library** by Adafruit
 3. **Adafruit Unified Sensor**
 4. **ModbusMaster** by Doc Walker
+5. **ArduinoJson** by Benoit Blanchon (v6.x) - for JSON parsing
 
 ### 2. Configure the Code
 
-Open `ESP32_NPK_SENSOR/ESP32_NPK_SENSOR.ino` and update:
+Open `ESP32_NPK_SENSOR/ESP32_NPK_SENSOR.ino` - WiFi and Firebase are already configured with your credentials:
 
 ```cpp
-// WiFi credentials
-#define WIFI_SSID "YOUR_WIFI_NAME"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
-
-// Firebase credentials
-#define FIREBASE_AUTH "YOUR_FIREBASE_DATABASE_SECRET"
+#define WIFI_SSID     "TP-Link_B03C"
+#define WIFI_PASSWORD "PLDTWIFID@bu123"
+#define API_KEY       "AIzaSyCbiFexrs6mspHzHiMA65VYOtMAqUF1T-c"
+#define DATABASE_URL  "https://greenhouse-67568-default-rtdb.asia-southeast1.firebasedatabase.app/"
 ```
 
-**Get Firebase Database Secret:**
-1. Go to Firebase Console → Project Settings → Service Accounts
-2. Click "Reveal" next to Database secret
-3. Copy and paste into the code
+**Pin Configuration (from your working test):**
+```cpp
+#define RS485_DE_RE_PIN 18  // IMPORTANT: GPIO 18, not 5!
+#define NPK_NITROGEN_REG    0x001E
+#define NPK_PHOSPHORUS_REG  0x001F
+#define NPK_POTASSIUM_REG   0x0020
+```
 
-### 3. Calibrate NPK Sensor
+### 3. Upload Code
 
-NPK sensors use Modbus RTU protocol. Common settings:
-- **Baud Rate:** 4800 (check your sensor's datasheet)
-- **Slave ID:** 1 (may vary by manufacturer)
-- **Register Addresses:** May need adjustment
+1. Connect ESP32 via USB
+2. Select board: **DOIT ESP32 DEVKIT V1** (or your board)
+3. Select port: **COM port** (Windows) or `/dev/ttyUSB0` (Linux)
+4. Click **Upload**
 
-**Check your sensor's documentation for:**
-- Correct Modbus register addresses for N, P, K values
-- Proper baud rate and slave ID
-- Wiring voltage requirements (some need 12V)
+### 4. Open Serial Monitor
 
-### 4. Calibrate Soil Moisture Sensors
+1. Set baud rate to **115200**
+2. You should see:
+```
+=== ESP32 Greenhouse with NPK Sensor Started ===
+WiFi connected. IP: 192.168.1.XXX
+NPK Sensor initialized
+NPK | N: 85 mg/kg, P: 32 mg/kg, K: 145 mg/kg
+✓ Firebase pushed (with NPK)
+```
+
+### 5. Test NPK Readings
+
+Wait for the NPK reading (every 10 seconds). You should see:
+```
+NPK | N: XX mg/kg, P: XX mg/kg, K: XX mg/kg
+```
+
+**If you see 0 values:**
+- Check wiring (DE/RE is GPIO 18!)
+- Verify A+ and B- are not swapped
+- Check sensor power (some need 12V)
+
+### 6. Calibrate Soil Moisture Sensors
 
 1. Upload this test code to read raw values:
 ```cpp
@@ -159,8 +182,8 @@ void setup() {
 }
 
 void loop() {
-  int dryValue = analogRead(34);  // Sensor in dry air
-  int wetValue = analogRead(34);  // Sensor in water
+  int dryValue = analogRead(36);  // Sensor in dry air
+  int wetValue = analogRead(36);  // Sensor in water
   Serial.printf("Dry: %d, Wet: %d\n", dryValue, wetValue);
   delay(1000);
 }
@@ -171,14 +194,13 @@ void loop() {
 int percentage = map(rawValue, YOUR_DRY_VALUE, YOUR_WET_VALUE, 0, 100);
 ```
 
-### 5. Upload Code
+The code already uses your calibrated values:
+```cpp
+#define DRY_VALUE 3000
+#define WET_VALUE 1300
+```
 
-1. Connect ESP32 via USB
-2. Select board: **DOIT ESP32 DEVKIT V1**
-3. Select port: **COM port** (Windows) or `/dev/ttyUSB0` (Linux)
-4. Click **Upload**
-
-### 6. Test in Firebase Console
+### 7. Test in Firebase Console
 
 1. Open Firebase Console → Realtime Database → Data
 2. You should see data appearing every 5 seconds:

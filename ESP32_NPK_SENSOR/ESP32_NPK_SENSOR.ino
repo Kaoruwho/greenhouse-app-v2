@@ -18,9 +18,8 @@
  */
 
 #include <WiFi.h>
-#include <Firebase_ESP32.h>
+#include <Firebase_ESP_Client.h>
 #include <DHT.h>
-#include <ModbusMaster.h>
 
 // ================= WIFI + FIREBASE =================
 #define WIFI_SSID     "TP-Link_B03C"
@@ -49,7 +48,7 @@
 // RS485 NPK Sensor Setup (Modbus RTU)
 #define RS485_TX_PIN   17
 #define RS485_RX_PIN   16
-#define RS485_DE_RE_PIN 5
+#define RS485_DE_RE_PIN 18  // Updated from your working code
 ModbusMaster node;
 
 // ================= CALIBRATION =================
@@ -85,9 +84,9 @@ FirebaseAuth auth;
 
 // ================= NPK SENSOR =================
 #define NPK_SLAVE_ID 1
-#define NPK_NITROGEN_REG    0x0000
-#define NPK_PHOSPHORUS_REG  0x0001
-#define NPK_POTASSIUM_REG   0x0002
+#define NPK_NITROGEN_REG    0x001E  // Updated from your working code
+#define NPK_PHOSPHORUS_REG  0x001F
+#define NPK_POTASSIUM_REG   0x0020
 
 struct NPKReading {
   int nitrogen = 0;
@@ -111,21 +110,21 @@ NPKReading readNPKSensor() {
   NPKReading npk = {0, 0, 0};
   uint8_t result;
   
-  // Read Nitrogen
+  // Read Nitrogen (register 0x001E)
   result = node.readInputRegisters(NPK_NITROGEN_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.nitrogen = node.getResponseBuffer(0);
   }
   delay(100);
   
-  // Read Phosphorus
+  // Read Phosphorus (register 0x001F)
   result = node.readInputRegisters(NPK_PHOSPHORUS_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.phosphorus = node.getResponseBuffer(0);
   }
   delay(100);
   
-  // Read Potassium
+  // Read Potassium (register 0x0020)
   result = node.readInputRegisters(NPK_POTASSIUM_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.potassium = node.getResponseBuffer(0);
@@ -399,7 +398,7 @@ void setup() {
   setupPins();
   dht.begin();
   
-  // Initialize RS485 for NPK sensor
+  // Initialize RS485 for NPK sensor (4800 baud from your working code)
   Serial2.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
   node.begin(NPK_SLAVE_ID, Serial2);
   node.preTransmission(preTransmission);
