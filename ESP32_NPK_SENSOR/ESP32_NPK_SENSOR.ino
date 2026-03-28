@@ -1,37 +1,21 @@
 // ============================================================
 //  ESP32 NPK Sensor + DHT22 + LDR + Soil Moisture + Firebase
-//  Based on sketch_feb24b.ino + npk_groq_test.ino
-// ============================================================
-//  Hardware:
-//    - DHT22: GPIO 4
-//    - Soil Sensors: GPIO 36, 34, 35
-//    - LDR: GPIO 33
-//    - Relays: GPIO 25, 26, 27, 21, 22, 23
-//    - NPK RS485: TX2=17, RX2=16, DE/RE=18
-// ============================================================
-//  Libraries (install via Arduino Library Manager):
-//    - Firebase_ESP_Client by Mobizt (v3.5.5+)
-//    - DHT sensor library by Adafruit
-//    - ArduinoJson by Benoit Blanchon (v6.x)
+//  Based on sketch_feb24b.ino with NPK sensor from npk_groq_test.ino
 // ============================================================
 
 #include <WiFi.h>
-#include <Firebase_ESP_Client.h>
 #include <DHT.h>
+#include <Firebase_ESP_Client.h>
 #include <ArduinoJson.h>
 
-// ============================================================
-//  WiFi + Firebase Configuration
-// ============================================================
+// ================= WIFI + FIREBASE =================
 #define WIFI_SSID     "TP-Link_B03C"
 #define WIFI_PASSWORD "PLDTWIFID@bu123"
 
 #define API_KEY       "AIzaSyCbiFexrs6mspHzHiMA65VYOtMAqUF1T-c"
 #define DATABASE_URL  "https://greenhouse-67568-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
-// ============================================================
-//  Pin Definitions
-// ============================================================
+// ================= PIN DEFINITIONS =================
 #define DHTPIN         4
 #define DHTTYPE        DHT22
 
@@ -47,19 +31,15 @@
 #define VALVE2_PIN     22
 #define VALVE3_PIN     23
 
+// NPK RS485 pins
 #define RS485_TX_PIN   17
 #define RS485_RX_PIN   16
 #define RS485_DE_RE_PIN 18
 
-// ============================================================
-//  Calibration
-// ============================================================
 #define DRY_VALUE 3000
 #define WET_VALUE 1300
 
-// ============================================================
-//  Plant Profile
-// ============================================================
+// ================= PLANT PROFILE =================
 String selectedPlant = "lettuce";
 int soilWaterThreshold = 35;
 
@@ -74,17 +54,13 @@ int lightDarkExit  = 500;
 unsigned long lastPlantPoll = 0;
 const unsigned long PLANT_POLL_MS = 5000;
 
-// ============================================================
-//  Timing
-// ============================================================
+// ================= TIMING =================
 const unsigned long SENSOR_INTERVAL_MS   = 2000;
 const unsigned long FIREBASE_PUSH_MS     = 1000;
 const unsigned long OVERRIDE_POLL_MS     = 500;
 const unsigned long NPK_READ_INTERVAL_MS = 10000;
 
-// ============================================================
-//  Objects
-// ============================================================
+// ================= OBJECTS =================
 DHT dht(DHTPIN, DHTTYPE);
 FirebaseData fbdo;
 FirebaseAuth auth;
@@ -92,9 +68,7 @@ FirebaseConfig config;
 
 HardwareSerial NPKSerial(2);
 
-// ============================================================
-//  NPK Sensor
-// ============================================================
+// ================= NPK SENSOR =================
 struct NPKReading {
   int nitrogen = 0;
   int phosphorus = 0;
@@ -107,9 +81,7 @@ unsigned long lastNPKRead = 0;
 // Modbus RTU query — Read N, P, K (device ID: 0x01)
 const byte NPK_QUERY[] = {0x01, 0x03, 0x00, 0x1E, 0x00, 0x03, 0x65, 0xCD};
 
-// ============================================================
-//  CRC16 Modbus
-// ============================================================
+// CRC16 Modbus
 uint16_t calculateCRC(const byte* data, uint8_t len) {
   uint16_t crc = 0xFFFF;
   for (uint8_t i = 0; i < len; i++) {
@@ -121,9 +93,7 @@ uint16_t calculateCRC(const byte* data, uint8_t len) {
   return crc;
 }
 
-// ============================================================
-//  Send RS485 query
-// ============================================================
+// Send RS485 query
 void sendQuery(const byte* query, uint8_t len) {
   digitalWrite(RS485_DE_RE_PIN, HIGH);
   delayMicroseconds(500);
@@ -133,11 +103,9 @@ void sendQuery(const byte* query, uint8_t len) {
   digitalWrite(RS485_DE_RE_PIN, LOW);
 }
 
-// ============================================================
-//  Read NPK sensor
-// ============================================================
+// Read NPK sensor
 bool readNPKSensor() {
-  while (NPKSerial.available()) NPKSerial.read(); // flush buffer
+  while (NPKSerial.available()) NPKSerial.read();
 
   sendQuery(NPK_QUERY, sizeof(NPK_QUERY));
   delay(100);
@@ -170,76 +138,48 @@ bool readNPKSensor() {
   return true;
 }
 
-// ============================================================
-//  Data Structures
-// ============================================================
-typedef struct {
-  String mode;
-  bool value;
-} OverrideItem;
+// ================= DATA =================
+struct SensorData {
+  float airTemp = NAN;
+  float humidity = NAN;
+  int soil1 = 0;
+  int soil2 = 0;
+  int soil3 = 0;
+  int lightRaw = 0;
+  
+  // NPK data
+  int npkNitrogen = 0;
+  int npkPhosphorus = 0;
+  int npkPotassium = 0;
 
-typedef struct {
-  float airTemp;
-  float humidity;
-  int soil1;
-  int soil2;
-  int soil3;
-  int lightRaw;
-  int npkNitrogen;
-  int npkPhosphorus;
-  int npkPotassium;
-  bool fan;
-  bool pump;
-  bool led;
-  bool valve1;
-  bool valve2;
-  bool valve3;
-  bool outFan;
-  bool outPump;
-  bool outLed;
-  bool outValve1;
-  bool outValve2;
-  bool outValve3;
-} SensorData;
+  // auto outputs (before override)
+  bool fan = false;
+  bool pump = false;
+  bool led = false;
+  bool valve1 = false;
+  bool valve2 = false;
+  bool valve3 = false;
+
+  // final outputs (after override)
+  bool outFan = false;
+  bool outPump = false;
+  bool outLed = false;
+  bool outValve1 = false;
+  bool outValve2 = false;
+  bool outValve3 = false;
+};
 
 SensorData data;
+
+// ================= OVERRIDES =================
+struct OverrideItem {
+  String mode = "auto";
+  bool value = false;
+};
+
 OverrideItem ovLed, ovFan, ovPump, ovV1, ovV2, ovV3;
 
-// Initialize defaults
-void initData() {
-  data.airTemp = NAN;
-  data.humidity = NAN;
-  data.soil1 = 0;
-  data.soil2 = 0;
-  data.soil3 = 0;
-  data.lightRaw = 0;
-  data.npkNitrogen = 0;
-  data.npkPhosphorus = 0;
-  data.npkPotassium = 0;
-  data.fan = false;
-  data.pump = false;
-  data.led = false;
-  data.valve1 = false;
-  data.valve2 = false;
-  data.valve3 = false;
-  data.outFan = false;
-  data.outPump = false;
-  data.outLed = false;
-  data.outValve1 = false;
-  data.outValve2 = false;
-  data.outValve3 = false;
-  
-  ovLed.mode = "auto"; ovLed.value = false;
-  ovFan.mode = "auto"; ovFan.value = false;
-  ovPump.mode = "auto"; ovPump.value = false;
-  ovV1.mode = "auto"; ovV1.value = false;
-  ovV2.mode = "auto"; ovV2.value = false;
-  ovV3.mode = "auto"; ovV3.value = false;
-}
-
-// ============================================================
-//  Helpers
-// ============================================================
+// ================= HELPERS =================
 int readSoilPct(int pin) {
   int raw = analogRead(pin);
   int pct = map(raw, DRY_VALUE, WET_VALUE, 0, 100);
@@ -301,17 +241,22 @@ void loadPlantProfileByKey(const String &plantKey) {
   String base = "/greenhouse/node1/plant/profiles/" + plantKey;
 
   getIntPath(base + "/soilWaterThreshold", soilWaterThreshold);
+
   getFloatPath(base + "/fanTempOn",  fanTempOn);
   getFloatPath(base + "/fanTempOff", fanTempOff);
   getFloatPath(base + "/fanHumOn",   fanHumOn);
   getFloatPath(base + "/fanHumOff",  fanHumOff);
+
   getIntPath(base + "/lightDarkEnter", lightDarkEnter);
   getIntPath(base + "/lightDarkExit",  lightDarkExit);
 
   Serial.printf("Plant=%s | soilTh=%d | fan(T %.1f/%.1f, H %.1f/%.1f) | light(%d/%d)\n",
-    plantKey.c_str(), soilWaterThreshold,
-    fanTempOn, fanTempOff, fanHumOn, fanHumOff,
-    lightDarkEnter, lightDarkExit);
+    plantKey.c_str(),
+    soilWaterThreshold,
+    fanTempOn, fanTempOff,
+    fanHumOn, fanHumOff,
+    lightDarkEnter, lightDarkExit
+  );
 }
 
 void pollPlantSelectionAndProfile() {
@@ -325,11 +270,9 @@ void pollPlantSelectionAndProfile() {
   }
 }
 
-// ============================================================
-//  Firebase Push
-// ============================================================
+// ================= FIREBASE PUSH =================
 void pushToFirebase() {
-  // Legacy path (existing structure)
+  // Legacy path
   Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/airTemp", data.airTemp);
   Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/humidity", data.humidity);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/soil1", data.soil1);
@@ -337,19 +280,19 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/soil3", data.soil3);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/lightRaw", data.lightRaw);
   
-  // NPK Data - NEW!
+  // NPK Data
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/npkNitrogen", data.npkNitrogen);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/npkPhosphorus", data.npkPhosphorus);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/npkPotassium", data.npkPotassium);
   
-  // Mobile app compatible structure
+  // Mobile app structure
   Firebase.RTDB.setFloat(&fbdo, "/sensors/temperature", data.airTemp);
   Firebase.RTDB.setFloat(&fbdo, "/sensors/humidity", data.humidity);
   Firebase.RTDB.setInt(&fbdo, "/sensors/soilMoisture/pot1", data.soil1);
   Firebase.RTDB.setInt(&fbdo, "/sensors/soilMoisture/pot2", data.soil2);
   Firebase.RTDB.setInt(&fbdo, "/sensors/soilMoisture/pot3", data.soil3);
   
-  // NPK for mobile app (same values for all 3 pots)
+  // NPK for mobile app
   Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/nitrogen", data.npkNitrogen);
   Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/phosphorus", data.npkPhosphorus);
   Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/potassium", data.npkPotassium);
@@ -370,7 +313,6 @@ void pushToFirebase() {
   Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve2", data.outValve2);
   Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve3", data.outValve3);
   
-  // Mobile app compatible
   Firebase.RTDB.setBool(&fbdo, "/actuators/fan", data.outFan);
   Firebase.RTDB.setBool(&fbdo, "/actuators/pump", data.outPump);
   Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);
@@ -382,9 +324,7 @@ void pushToFirebase() {
   Serial.println("Firebase pushed (with NPK)");
 }
 
-// ============================================================
-//  Setup Functions
-// ============================================================
+// ================= SETUP =================
 void setupPins() {
   pinMode(LED_RELAY_PIN, OUTPUT);
   pinMode(FAN_RELAY_PIN, OUTPUT);
@@ -429,7 +369,8 @@ void setupWiFiFirebase() {
   if (Firebase.signUp(&config, &auth, "", "")) {
     Serial.println("Firebase signUp OK");
   } else {
-    Serial.printf("Firebase signUp FAILED: %s\n", config.signer.signupError.message.c_str());
+    Serial.printf("Firebase signUp FAILED: %s\n",
+      config.signer.signupError.message.c_str());
   }
 
   Firebase.begin(&config, &auth);
@@ -450,30 +391,24 @@ void setupWiFiFirebase() {
   }
 }
 
-// ============================================================
-//  Setup
-// ============================================================
 void setup() {
   Serial.begin(115200);
 
-  initData();  // Initialize data structures
   setupPins();
   dht.begin();
-
-  // Initialize RS485 for NPK sensor (4800 baud from your working code)
+  
+  // Initialize RS485 for NPK sensor
   NPKSerial.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
   pinMode(RS485_DE_RE_PIN, OUTPUT);
   digitalWrite(RS485_DE_RE_PIN, LOW);
-
+  
   Serial.println("NPK Sensor initialized");
   setupWiFiFirebase();
-
+  
   Serial.println("=== ESP32 Greenhouse with NPK Sensor Started ===");
 }
 
-// ============================================================
-//  Main Loop
-// ============================================================
+// ================= MAIN LOOP =================
 unsigned long lastSensor = 0;
 unsigned long lastPush = 0;
 unsigned long lastOverridePoll = 0;
@@ -481,13 +416,11 @@ unsigned long lastOverridePoll = 0;
 void loop() {
   unsigned long now = millis();
 
-  // Poll plant selection
   if (Firebase.ready() && now - lastPlantPoll >= PLANT_POLL_MS) {
     pollPlantSelectionAndProfile();
     lastPlantPoll = now;
   }
 
-  // Read overrides
   if (Firebase.ready() && now - lastOverridePoll >= OVERRIDE_POLL_MS) {
     readOverride("led", ovLed);
     readOverride("fan", ovFan);
@@ -495,6 +428,7 @@ void loop() {
     readOverride("valve1", ovV1);
     readOverride("valve2", ovV2);
     readOverride("valve3", ovV3);
+
     lastOverridePoll = now;
 
     Serial.printf("Overrides | led:%s fan:%s pump:%s v1:%s v2:%s v3:%s\n",
@@ -502,11 +436,11 @@ void loop() {
       ovV1.mode.c_str(), ovV2.mode.c_str(), ovV3.mode.c_str());
   }
 
-  // Read sensors + compute AUTO logic
   if (now - lastSensor >= SENSOR_INTERVAL_MS) {
     lastSensor = now;
 
     data.lightRaw = analogRead(LDR_PIN);
+
     data.airTemp  = dht.readTemperature();
     data.humidity = dht.readHumidity();
 
@@ -528,7 +462,6 @@ void loop() {
       lastNPKRead = now;
     }
 
-    // Fan control with hysteresis
     static bool fanState = false;
     if (isnan(data.airTemp) || isnan(data.humidity)) {
       fanState = false;
@@ -545,15 +478,12 @@ void loop() {
     }
     data.fan = fanState;
 
-    // Auto valves based on soil
     data.valve1 = data.soil1 < soilWaterThreshold;
     data.valve2 = data.soil2 < soilWaterThreshold;
     data.valve3 = data.soil3 < soilWaterThreshold;
 
-    // Auto pump only if any valve open
     data.pump = data.valve1 || data.valve2 || data.valve3;
 
-    // Auto LED hysteresis
     static bool ledState = false;
     if (ledState) {
       if (data.lightRaw < lightDarkExit) ledState = false;
@@ -562,16 +492,15 @@ void loop() {
     }
     data.led = ledState;
 
-    // Apply overrides (final outputs)
     data.outLed    = applyOverride(ovLed, data.led);
     data.outFan    = applyOverride(ovFan, data.fan);
 
     bool pumpFinal = applyOverride(ovPump, data.pump);
+
     bool v1Final = applyOverride(ovV1, data.valve1);
     bool v2Final = applyOverride(ovV2, data.valve2);
     bool v3Final = applyOverride(ovV3, data.valve3);
 
-    // If pump is manual ON but valves are auto OFF, force valves ON
     if (ovPump.mode == "manual" && ovPump.value == true) {
       if (ovV1.mode == "auto") v1Final = true;
       if (ovV2.mode == "auto") v2Final = true;
@@ -582,14 +511,12 @@ void loop() {
     data.outValve2 = v2Final;
     data.outValve3 = v3Final;
 
-    // Pump follows valves in auto mode
     if (ovPump.mode == "auto") {
       data.outPump = data.outValve1 || data.outValve2 || data.outValve3;
     } else {
       data.outPump = pumpFinal;
     }
 
-    // Drive relays (LOW-trigger)
     relayWrite(LED_RELAY_PIN,  data.outLed);
     relayWrite(FAN_RELAY_PIN,  data.outFan);
     relayWrite(PUMP_RELAY_PIN, data.outPump);
@@ -597,16 +524,20 @@ void loop() {
     relayWrite(VALVE2_PIN,     data.outValve2);
     relayWrite(VALVE3_PIN,     data.outValve3);
 
-    // Serial debug
     Serial.printf("Temp: %.1f C | Hum: %.1f %%\n", data.airTemp, data.humidity);
     Serial.printf("Soil: %d %d %d | LightRaw: %d\n", data.soil1, data.soil2, data.soil3, data.lightRaw);
     Serial.printf("AUTO  led:%d fan:%d pump:%d v1:%d v2:%d v3:%d\n",
       data.led, data.fan, data.pump, data.valve1, data.valve2, data.valve3);
     Serial.printf("FINAL led:%d fan:%d pump:%d v1:%d v2:%d v3:%d\n\n",
       data.outLed, data.outFan, data.outPump, data.outValve1, data.outValve2, data.outValve3);
+    Serial.printf("FanState=%d | T=%.1f H=%.1f | T_ON=%.1f H_ON=%.1f\n",
+              fanState,
+              data.airTemp,
+              data.humidity,
+              fanTempOn,
+              fanHumOn);
   }
 
-  // Push to Firebase periodically
   if (Firebase.ready() && now - lastPush >= FIREBASE_PUSH_MS) {
     pushToFirebase();
     lastPush = now;
