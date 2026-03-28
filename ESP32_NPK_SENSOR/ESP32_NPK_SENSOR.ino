@@ -31,9 +31,9 @@
 // ================= TIMING =================
 const unsigned long SENSOR_INTERVAL_MS   = 2000;
 const unsigned long FIREBASE_PUSH_MS     = 1000;
-const unsigned long OVERRIDE_POLL_MS     = 500;
 const unsigned long NPK_READ_INTERVAL_MS = 10000;
 const unsigned long PLANT_POLL_MS        = 5000;
+const unsigned long MODE_POLL_MS         = 500;  // Check manual/auto mode
 
 // ================= PLANT PROFILE =================
 String selectedPlant      = "lettuce";
@@ -44,6 +44,12 @@ float  fanHumOn           = 80.0;
 float  fanHumOff          = 75.0;
 int    lightDarkEnter     = 600;
 int    lightDarkExit      = 500;
+
+// ================= CONTROL MODE =================
+bool isAutoMode   = true;   // true = auto, false = manual
+bool manualFan    = false;  // Manual fan state (from app)
+bool manualPump   = false;  // Manual pump state (from app)
+bool manualLed    = false;  // Manual LED state (from app)
 
 // ================= STRUCTS (declared before all functions) =================
 
@@ -71,11 +77,6 @@ struct SensorData {
   bool  outValve3 = false;
 };
 
-struct OverrideItem {
-  String mode  = "auto";
-  bool   value = false;
-};
-
 struct NPKReading {
   int nitrogen   = 0;
   int phosphorus = 0;
@@ -85,7 +86,6 @@ struct NPKReading {
 // ================= GLOBAL VARIABLES =================
 
 SensorData   data;
-OverrideItem ovLed, ovFan, ovPump, ovV1, ovV2, ovV3;
 NPKReading   npkData;
 
 DHT            dht(DHTPIN, DHTTYPE);
@@ -97,8 +97,8 @@ HardwareSerial NPKSerial(2);
 unsigned long lastNPKRead      = 0;
 unsigned long lastSensor       = 0;
 unsigned long lastPush         = 0;
-unsigned long lastOverridePoll = 0;
 unsigned long lastPlantPoll    = 0;
+unsigned long lastModePoll     = 0;
 
 const byte NPK_QUERY[] = {0x01, 0x03, 0x00, 0x1E, 0x00, 0x03, 0x65, 0xCD};
 
@@ -168,10 +168,6 @@ void relayWrite(int pin, bool on) {
   digitalWrite(pin, on ? LOW : HIGH);
 }
 
-String controlBase(const char* name) {
-  return String("/controls/") + name;
-}
-
 // ================= FIREBASE HELPERS =================
 
 bool getIntPath(const String& path, int& out) {
@@ -198,25 +194,26 @@ bool getStringPath(const String& path, String& out) {
   return false;
 }
 
-// ================= OVERRIDE FUNCTIONS =================
+// ================= CONTROL MODE =================
 
-bool readOverride(const char* name, OverrideItem& ov) {
-  String modePath = controlBase(name) + "/mode";
-  if (Firebase.RTDB.getString(&fbdo, modePath.c_str())) {
-    String m = fbdo.stringData();
-    m.toLowerCase();
-    if (m == "auto" || m == "manual") ov.mode = m;
+void readControlMode() {
+  // Read auto/manual mode
+  if (Firebase.RTDB.getBool(&fbdo, "/controlMode/isAuto")) {
+    isAutoMode = fbdo.boolData();
   }
-  String valuePath = controlBase(name) + "/value";
-  if (Firebase.RTDB.getBool(&fbdo, valuePath.c_str())) {
-    ov.value = fbdo.boolData();
+  
+  // If in manual mode, read actuator states from app
+  if (!isAutoMode) {
+    if (Firebase.RTDB.getBool(&fbdo, "/actuators/fan")) {
+      manualFan = fbdo.boolData();
+    }
+    if (Firebase.RTDB.getBool(&fbdo, "/actuators/pump")) {
+      manualPump = fbdo.boolData();
+    }
+    if (Firebase.RTDB.getBool(&fbdo, "/actuators/ledLight")) {
+      manualLed = fbdo.boolData();
+    }
   }
-  return true;
-}
-
-bool applyOverride(const OverrideItem& ov, bool autoValue) {
-  if (ov.mode == "manual") return ov.value;
-  return autoValue;
 }
 
 // ================= PLANT PROFILE FUNCTIONS =================
@@ -239,7 +236,7 @@ void loadPlantProfileByKey(const String& plantKey) {
 
 void pollPlantSelectionAndProfile() {
   String newPlant;
-  if (getStringPath("/plant/selected", newPlant)) {
+  if (getStringPath("/settings/selectedPlant", newPlant)) {
     newPlant.toLowerCase();
     if (newPlant.length() > 0 && newPlant != selectedPlant) {
       selectedPlant = newPlant;
@@ -251,7 +248,7 @@ void pollPlantSelectionAndProfile() {
 // ================= FIREBASE PUSH =================
 
 void pushToFirebase() {
-  // Mobile app structure: /sensors/ and /actuators/
+  // Sensors - always push
   Firebase.RTDB.setFloat(&fbdo, "/sensors/temperature",       data.airTemp);
   Firebase.RTDB.setFloat(&fbdo, "/sensors/humidity",          data.humidity);
   Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot1", data.soil1);
@@ -269,9 +266,12 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/potassium",   data.npkPotassium);        
   Firebase.RTDB.setInt(&fbdo, "/sensors/timestamp",            (int)millis());
 
-  Firebase.RTDB.setBool(&fbdo, "/actuators/fan",      data.outFan);        
-  Firebase.RTDB.setBool(&fbdo, "/actuators/pump",     data.outPump);       
-  Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);        
+  // Actuators - ONLY push when in AUTO mode (don't overwrite manual values)
+  if (isAutoMode) {
+    Firebase.RTDB.setBool(&fbdo, "/actuators/fan",      data.outFan);        
+    Firebase.RTDB.setBool(&fbdo, "/actuators/pump",     data.outPump);       
+    Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);
+  }
 
   Serial.println("Firebase pushed.");
 }
@@ -325,7 +325,7 @@ void setupWiFiFirebase() {
   Serial.println("Firebase Ready");
 
   String initPlant;
-  if (getStringPath("/plant/selected", initPlant) && initPlant.length() > 0) {
+  if (getStringPath("/settings/selectedPlant", initPlant) && initPlant.length() > 0) {
     selectedPlant = initPlant;
   }
   loadPlantProfileByKey(selectedPlant);
@@ -358,21 +358,15 @@ void loop() {
     lastPlantPoll = now;
   }
 
-  // Poll overrides
-  if (Firebase.ready() && now - lastOverridePoll >= OVERRIDE_POLL_MS) {
-    readOverride("led",    ovLed);
-    readOverride("fan",    ovFan);
-    readOverride("pump",   ovPump);
-    readOverride("valve1", ovV1);
-    readOverride("valve2", ovV2);
-    readOverride("valve3", ovV3);
-    lastOverridePoll = now;
-    Serial.printf("Overrides | led:%s fan:%s pump:%s v1:%s v2:%s v3:%s\n",
-      ovLed.mode.c_str(), ovFan.mode.c_str(), ovPump.mode.c_str(),
-      ovV1.mode.c_str(), ovV2.mode.c_str(), ovV3.mode.c_str());
+  // Poll control mode (auto/manual)
+  if (Firebase.ready() && now - lastModePoll >= MODE_POLL_MS) {
+    readControlMode();
+    lastModePoll = now;
+    Serial.printf("Mode: %s | Manual: fan=%d pump=%d led=%d\n",
+      isAutoMode ? "AUTO" : "MANUAL", manualFan, manualPump, manualLed);
   }
 
-  // Read sensors + auto logic (auto logic ALWAYS runs, override decides what to use)
+  // Read sensors + auto logic
   if (now - lastSensor >= SENSOR_INTERVAL_MS) {
     lastSensor = now;
 
@@ -397,59 +391,54 @@ void loop() {
       lastNPKRead = now;
     }
 
-    // Fan hysteresis (ALWAYS runs, static preserves state)
-    static bool fanState = false;
-    if (isnan(data.airTemp) || isnan(data.humidity)) {
-      fanState = false;
-    } else {
-      if (fanState) {
-        if (data.airTemp <= fanTempOff && data.humidity <= fanHumOff) fanState = false;
+    // AUTO MODE: Calculate based on sensors
+    if (isAutoMode) {
+      // Fan hysteresis
+      static bool fanState = false;
+      if (isnan(data.airTemp) || isnan(data.humidity)) {
+        fanState = false;
       } else {
-        if (data.airTemp >= fanTempOn  || data.humidity >= fanHumOn)  fanState = true;
+        if (fanState) {
+          if (data.airTemp <= fanTempOff && data.humidity <= fanHumOff) fanState = false;
+        } else {
+          if (data.airTemp >= fanTempOn  || data.humidity >= fanHumOn)  fanState = true;
+        }
       }
-    }
-    data.fan = fanState;
+      data.fan = fanState;
 
-    // Valves + pump (ALWAYS run)
-    data.valve1 = data.soil1 < soilWaterThreshold;
-    data.valve2 = data.soil2 < soilWaterThreshold;
-    data.valve3 = data.soil3 < soilWaterThreshold;
-    data.pump   = data.valve1 || data.valve2 || data.valve3;
+      // Valves + pump
+      data.valve1 = data.soil1 < soilWaterThreshold;
+      data.valve2 = data.soil2 < soilWaterThreshold;
+      data.valve3 = data.soil3 < soilWaterThreshold;
+      data.pump   = data.valve1 || data.valve2 || data.valve3;
 
-    // LED hysteresis (ALWAYS runs, static preserves state)
-    static bool ledState = false;
-    if (ledState) {
-      if (data.lightRaw < lightDarkExit)  ledState = false;
-    } else {
-      if (data.lightRaw > lightDarkEnter) ledState = true;
-    }
-    data.led = ledState;
+      // LED hysteresis
+      static bool ledState = false;
+      if (ledState) {
+        if (data.lightRaw < lightDarkExit)  ledState = false;
+      } else {
+        if (data.lightRaw > lightDarkEnter) ledState = true;
+      }
+      data.led = ledState;
 
-    // Apply overrides - manual uses ov.value, auto uses calculated state
-    data.outLed = applyOverride(ovLed, data.led);
-    data.outFan = applyOverride(ovFan, data.fan);
-
-    bool pumpFinal = applyOverride(ovPump, data.pump);
-    bool v1Final   = applyOverride(ovV1,   data.valve1);
-    bool v2Final   = applyOverride(ovV2,   data.valve2);
-    bool v3Final   = applyOverride(ovV3,   data.valve3);
-
-    // If pump is manual ON, force all auto valves ON
-    if (ovPump.mode == "manual" && ovPump.value == true) {
-      if (ovV1.mode == "auto") v1Final = true;
-      if (ovV2.mode == "auto") v2Final = true;
-      if (ovV3.mode == "auto") v3Final = true;
+      // Use auto values
+      data.outFan  = data.fan;
+      data.outPump = data.pump;
+      data.outLed  = data.led;
+    } 
+    // MANUAL MODE: Use values from app
+    else {
+      data.outFan  = manualFan;
+      data.outPump = manualPump;
+      data.outLed  = manualLed;
+      data.valve1  = false;  // Valves off in manual
+      data.valve2  = false;
+      data.valve3  = false;
     }
 
-    data.outValve1 = v1Final;
-    data.outValve2 = v2Final;
-    data.outValve3 = v3Final;
-
-    if (ovPump.mode == "auto") {
-      data.outPump = data.outValve1 || data.outValve2 || data.outValve3;
-    } else {
-      data.outPump = pumpFinal;
-    }
+    data.outValve1 = data.valve1;
+    data.outValve2 = data.valve2;
+    data.outValve3 = data.valve3;
 
     // Drive relays
     relayWrite(LED_RELAY_PIN,  data.outLed);
@@ -463,15 +452,12 @@ void loop() {
     Serial.printf("Temp:%.1fC Hum:%.1f%% Soil:%d/%d/%d Light:%d\n",
       data.airTemp, data.humidity,
       data.soil1, data.soil2, data.soil3, data.lightRaw);
-    Serial.printf("AUTO   led:%d fan:%d pump:%d v1:%d v2:%d v3:%d\n",
-      data.led, data.fan, data.pump,
+    Serial.printf("AUTO   fan:%d pump:%d led:%d v1:%d v2:%d v3:%d\n",
+      data.fan, data.pump, data.led,
       data.valve1, data.valve2, data.valve3);
-    Serial.printf("FINAL  led:%d fan:%d pump:%d v1:%d v2:%d v3:%d\n",
-      data.outLed, data.outFan, data.outPump,
+    Serial.printf("FINAL  fan:%d pump:%d led:%d v1:%d v2:%d v3:%d\n\n",
+      data.outFan, data.outPump, data.outLed,
       data.outValve1, data.outValve2, data.outValve3);
-    Serial.printf("OVR    led:%s(%d) fan:%s(%d) pump:%s(%d) v1:%s(%d) v2:%s(%d) v3:%s(%d)\n\n",
-      ovLed.mode.c_str(), ovLed.value, ovFan.mode.c_str(), ovFan.value, ovPump.mode.c_str(), ovPump.value,
-      ovV1.mode.c_str(), ovV1.value, ovV2.mode.c_str(), ovV2.value, ovV3.mode.c_str(), ovV3.value);
   }
 
   // Push to Firebase
