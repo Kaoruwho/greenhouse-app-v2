@@ -1,43 +1,47 @@
-/*
- * ESP32 NPK Sensor + DHT22 + LDR + Soil Moisture + Firebase
- * ==========================================================
- * Based on sketch_feb24b.ino with added NPK sensor support
- * 
- * Hardware:
- * - ESP32 Dev Board
- * - DHT22 Temperature & Humidity Sensor
- * - MAX RS485 + NPK Sensor (Modbus RTU)
- * - 4pin LDR Module
- * - Capacitive Soil Moisture Sensors (x3)
- * - 2x 4-channel 5V Relay Module (LOW-trigger)
- * 
- * Libraries Required:
- * - Firebase-ESP32 by Mobizt (v3.5.5 or later)
- * - DHT sensor library by Adafruit
- * - ModbusMaster by Doc Walker
- */
+// ============================================================
+//  ESP32 NPK Sensor + DHT22 + LDR + Soil Moisture + Firebase
+//  Based on sketch_feb24b.ino with NPK support
+// ============================================================
+//  Hardware:
+//    - DHT22: GPIO 4
+//    - Soil Sensors: GPIO 36, 34, 35
+//    - LDR: GPIO 33
+//    - Relays: GPIO 25, 26, 27, 21, 22, 23
+//    - NPK RS485: TX2=17, RX2=16, DE/RE=18
+// ============================================================
+//  Libraries (install via Arduino Library Manager):
+//    - Firebase_ESP_Client by Mobizt (v3.5.5+)
+//    - DHT sensor library by Adafruit
+//    - ModbusMaster by Doc Walker
+//    - ArduinoJson by Benoit Blanchon (v6.x)
+// ============================================================
 
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
 #include <DHT.h>
+#include <ModbusMaster.h>
+#include <ArduinoJson.h>
 
-// ================= WIFI + FIREBASE =================
+// ============================================================
+//  WiFi + Firebase Configuration
+// ============================================================
 #define WIFI_SSID     "TP-Link_B03C"
 #define WIFI_PASSWORD "PLDTWIFID@bu123"
 
 #define API_KEY       "AIzaSyCbiFexrs6mspHzHiMA65VYOtMAqUF1T-c"
 #define DATABASE_URL  "https://greenhouse-67568-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
-// ================= PIN DEFINITIONS =================
+// ============================================================
+//  Pin Definitions
+// ============================================================
 #define DHTPIN         4
 #define DHTTYPE        DHT22
 
-#define SOIL1_PIN      36   // ADC-only
+#define SOIL1_PIN      36
 #define SOIL2_PIN      34
 #define SOIL3_PIN      35
 #define LDR_PIN        33
 
-// Relay pins (LOW-trigger)
 #define LED_RELAY_PIN  25
 #define FAN_RELAY_PIN  26
 #define PUMP_RELAY_PIN 27
@@ -45,17 +49,19 @@
 #define VALVE2_PIN     22
 #define VALVE3_PIN     23
 
-// RS485 NPK Sensor Setup (Modbus RTU)
 #define RS485_TX_PIN   17
 #define RS485_RX_PIN   16
-#define RS485_DE_RE_PIN 18  // Updated from your working code
+#define RS485_DE_RE_PIN 18
 
-
-// ================= CALIBRATION =================
+// ============================================================
+//  Calibration
+// ============================================================
 #define DRY_VALUE 3000
 #define WET_VALUE 1300
 
-// ================= PLANT PROFILE =================
+// ============================================================
+//  Plant Profile
+// ============================================================
 String selectedPlant = "lettuce";
 int soilWaterThreshold = 35;
 
@@ -70,21 +76,29 @@ int lightDarkExit  = 500;
 unsigned long lastPlantPoll = 0;
 const unsigned long PLANT_POLL_MS = 5000;
 
-// ================= TIMING =================
+// ============================================================
+//  Timing
+// ============================================================
 const unsigned long SENSOR_INTERVAL_MS   = 2000;
 const unsigned long FIREBASE_PUSH_MS     = 1000;
 const unsigned long OVERRIDE_POLL_MS     = 500;
-const unsigned long NPK_READ_INTERVAL_MS = 10000;  // NPK every 10 seconds
+const unsigned long NPK_READ_INTERVAL_MS = 10000;
 
-// ================= OBJECTS =================
+// ============================================================
+//  Objects
+// ============================================================
 DHT dht(DHTPIN, DHTTYPE);
-FirebaseData firebaseData;
-FirebaseConfig config;
+FirebaseData fbdo;
 FirebaseAuth auth;
+FirebaseConfig config;
 
-// ================= NPK SENSOR =================
+ModbusMaster node;
+
+// ============================================================
+//  NPK Sensor
+// ============================================================
 #define NPK_SLAVE_ID 1
-#define NPK_NITROGEN_REG    0x001E  // Updated from your working code
+#define NPK_NITROGEN_REG    0x001E
 #define NPK_PHOSPHORUS_REG  0x001F
 #define NPK_POTASSIUM_REG   0x0020
 
@@ -99,32 +113,29 @@ unsigned long lastNPKRead = 0;
 
 // RS485 transceiver control
 void preTransmission() {
-  digitalWrite(RS485_DE_RE_PIN, 1);
+  digitalWrite(RS485_DE_RE_PIN, HIGH);
 }
 
 void postTransmission() {
-  digitalWrite(RS485_DE_RE_PIN, 0);
+  digitalWrite(RS485_DE_RE_PIN, LOW);
 }
 
 NPKReading readNPKSensor() {
   NPKReading npk = {0, 0, 0};
   uint8_t result;
   
-  // Read Nitrogen (register 0x001E)
   result = node.readInputRegisters(NPK_NITROGEN_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.nitrogen = node.getResponseBuffer(0);
   }
   delay(100);
   
-  // Read Phosphorus (register 0x001F)
   result = node.readInputRegisters(NPK_PHOSPHORUS_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.phosphorus = node.getResponseBuffer(0);
   }
   delay(100);
   
-  // Read Potassium (register 0x0020)
   result = node.readInputRegisters(NPK_POTASSIUM_REG, 1);
   if (result == node.ku8MBSuccess) {
     npk.potassium = node.getResponseBuffer(0);
@@ -133,7 +144,9 @@ NPKReading readNPKSensor() {
   return npk;
 }
 
-// ================= DATA STRUCTURES =================
+// ============================================================
+//  Data Structures
+// ============================================================
 struct SensorData {
   float airTemp = NAN;
   float humidity = NAN;
@@ -142,12 +155,10 @@ struct SensorData {
   int soil3 = 0;
   int lightRaw = 0;
   
-  // NPK data
   int npkNitrogen = 0;
   int npkPhosphorus = 0;
   int npkPotassium = 0;
 
-  // auto outputs (before override)
   bool fan = false;
   bool pump = false;
   bool led = false;
@@ -155,7 +166,6 @@ struct SensorData {
   bool valve2 = false;
   bool valve3 = false;
 
-  // final outputs (after override)
   bool outFan = false;
   bool outPump = false;
   bool outLed = false;
@@ -166,7 +176,6 @@ struct SensorData {
 
 SensorData data;
 
-// ================= OVERRIDES =================
 struct OverrideItem {
   String mode = "auto";
   bool value = false;
@@ -174,7 +183,9 @@ struct OverrideItem {
 
 OverrideItem ovLed, ovFan, ovPump, ovV1, ovV2, ovV3;
 
-// ================= HELPERS =================
+// ============================================================
+//  Helpers
+// ============================================================
 int readSoilPct(int pin) {
   int raw = analogRead(pin);
   int pct = map(raw, DRY_VALUE, WET_VALUE, 0, 100);
@@ -208,9 +219,6 @@ bool applyOverride(const OverrideItem &ov, bool autoValue) {
   return autoValue;
 }
 
-// ================= FIREBASE HELPER =================
-FirebaseData fbdo;  // Separate instance for RTDB operations
-
 bool getIntPath(const String &path, int &out) {
   if (Firebase.RTDB.getInt(&fbdo, path.c_str())) {
     out = fbdo.intData();
@@ -239,22 +247,17 @@ void loadPlantProfileByKey(const String &plantKey) {
   String base = "/greenhouse/node1/plant/profiles/" + plantKey;
 
   getIntPath(base + "/soilWaterThreshold", soilWaterThreshold);
-
   getFloatPath(base + "/fanTempOn",  fanTempOn);
   getFloatPath(base + "/fanTempOff", fanTempOff);
   getFloatPath(base + "/fanHumOn",   fanHumOn);
   getFloatPath(base + "/fanHumOff",  fanHumOff);
-
   getIntPath(base + "/lightDarkEnter", lightDarkEnter);
   getIntPath(base + "/lightDarkExit",  lightDarkExit);
 
   Serial.printf("Plant=%s | soilTh=%d | fan(T %.1f/%.1f, H %.1f/%.1f) | light(%d/%d)\n",
-    plantKey.c_str(),
-    soilWaterThreshold,
-    fanTempOn, fanTempOff,
-    fanHumOn, fanHumOff,
-    lightDarkEnter, lightDarkExit
-  );
+    plantKey.c_str(), soilWaterThreshold,
+    fanTempOn, fanTempOff, fanHumOn, fanHumOff,
+    lightDarkEnter, lightDarkExit);
 }
 
 void pollPlantSelectionAndProfile() {
@@ -268,9 +271,11 @@ void pollPlantSelectionAndProfile() {
   }
 }
 
-// ================= FIREBASE PUSH =================
+// ============================================================
+//  Firebase Push
+// ============================================================
 void pushToFirebase() {
-  // Sensors - legacy path (for compatibility with existing app)
+  // Legacy path (existing structure)
   Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/airTemp", data.airTemp);
   Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/humidity", data.humidity);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/soil1", data.soil1);
@@ -283,7 +288,7 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/npkPhosphorus", data.npkPhosphorus);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/sensors/npkPotassium", data.npkPotassium);
   
-  // NEW: Also push to app-compatible structure for mobile app
+  // Mobile app compatible structure
   Firebase.RTDB.setFloat(&fbdo, "/sensors/temperature", data.airTemp);
   Firebase.RTDB.setFloat(&fbdo, "/sensors/humidity", data.humidity);
   Firebase.RTDB.setInt(&fbdo, "/sensors/soilMoisture/pot1", data.soil1);
@@ -311,7 +316,7 @@ void pushToFirebase() {
   Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve2", data.outValve2);
   Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve3", data.outValve3);
   
-  // Also push to app-compatible structure
+  // Mobile app compatible
   Firebase.RTDB.setBool(&fbdo, "/actuators/fan", data.outFan);
   Firebase.RTDB.setBool(&fbdo, "/actuators/pump", data.outPump);
   Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);
@@ -320,10 +325,12 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/system/lastSeenMs", (int)millis());
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/system/lastPushMs", (int)millis());
   
-  Serial.println("✓ Firebase pushed (with NPK)");
+  Serial.println("Firebase pushed (with NPK)");
 }
 
-// ================= SETUP =================
+// ============================================================
+//  Setup Functions
+// ============================================================
 void setupPins() {
   pinMode(LED_RELAY_PIN, OUTPUT);
   pinMode(FAN_RELAY_PIN, OUTPUT);
@@ -332,9 +339,8 @@ void setupPins() {
   pinMode(VALVE2_PIN, OUTPUT);
   pinMode(VALVE3_PIN, OUTPUT);
   pinMode(RS485_DE_RE_PIN, OUTPUT);
-  digitalWrite(RS485_DE_RE_PIN, LOW);  // Start in receive mode
+  digitalWrite(RS485_DE_RE_PIN, LOW);
 
-  // OFF (LOW-trigger relays)
   digitalWrite(LED_RELAY_PIN, HIGH);
   digitalWrite(FAN_RELAY_PIN, HIGH);
   digitalWrite(PUMP_RELAY_PIN, HIGH);
@@ -369,8 +375,7 @@ void setupWiFiFirebase() {
   if (Firebase.signUp(&config, &auth, "", "")) {
     Serial.println("Firebase signUp OK");
   } else {
-    Serial.printf("Firebase signUp FAILED: %s\n",
-      config.signer.signupError.message.c_str());
+    Serial.printf("Firebase signUp FAILED: %s\n", config.signer.signupError.message.c_str());
   }
 
   Firebase.begin(&config, &auth);
@@ -382,7 +387,6 @@ void setupWiFiFirebase() {
   }
   Serial.println("Firebase Ready");
   
-  // Load initial plant + profile
   if (Firebase.ready()) {
     String initPlant;
     if (getStringPath("/greenhouse/node1/plant/selected", initPlant) && initPlant.length() > 0) {
@@ -392,26 +396,30 @@ void setupWiFiFirebase() {
   }
 }
 
+// ============================================================
+//  Setup
+// ============================================================
 void setup() {
   Serial.begin(115200);
 
   setupPins();
   dht.begin();
   
-  // Initialize RS485 for NPK sensor (4800 baud from your working code)
+  // Initialize RS485 for NPK sensor
   Serial2.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
   node.begin(NPK_SLAVE_ID, Serial2);
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
   
   Serial.println("NPK Sensor initialized");
-  
   setupWiFiFirebase();
   
   Serial.println("=== ESP32 Greenhouse with NPK Sensor Started ===");
 }
 
-// ================= MAIN LOOP =================
+// ============================================================
+//  Main Loop
+// ============================================================
 unsigned long lastSensor = 0;
 unsigned long lastPush = 0;
 unsigned long lastOverridePoll = 0;
@@ -433,7 +441,6 @@ void loop() {
     readOverride("valve1", ovV1);
     readOverride("valve2", ovV2);
     readOverride("valve3", ovV3);
-
     lastOverridePoll = now;
 
     Serial.printf("Overrides | led:%s fan:%s pump:%s v1:%s v2:%s v3:%s\n",
@@ -446,7 +453,6 @@ void loop() {
     lastSensor = now;
 
     data.lightRaw = analogRead(LDR_PIN);
-
     data.airTemp  = dht.readTemperature();
     data.humidity = dht.readHumidity();
 
@@ -505,7 +511,6 @@ void loop() {
     data.outFan    = applyOverride(ovFan, data.fan);
 
     bool pumpFinal = applyOverride(ovPump, data.pump);
-
     bool v1Final = applyOverride(ovV1, data.valve1);
     bool v2Final = applyOverride(ovV2, data.valve2);
     bool v3Final = applyOverride(ovV3, data.valve3);
