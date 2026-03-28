@@ -7,9 +7,11 @@ This guide will help you set up the NPK (Nitrogen, Phosphorus, Potassium) soil s
 | Component | Quantity | Purpose |
 |-----------|----------|---------|
 | ESP32 Dev Board | 1 | Main microcontroller |
-| RS485 NPK Sensor | 1 | Measures N, P, K levels in soil |
-| DHT11/DHT22 Sensor | 1 | Temperature & humidity |
+| MAX RS485 + NPK Sensor | 1 | Measures N, P, K levels in soil (Modbus RTU) |
+| DHT22 Sensor | 1 | Temperature & humidity (more accurate than DHT11) |
+| 4pin LDR Module | 1 | Light intensity detection |
 | Capacitive Soil Moisture Sensors | 3 | Soil moisture per pot |
+| 2x 4-channel 5V Relay Module | 2 | LOW-trigger relays for fan, pump, LED, valves |
 | RS485 Module (if not built-in) | 1 | Modbus RTU communication |
 | Jumper Wires | - | Connections |
 | Breadboard/PCB | 1 | Prototyping |
@@ -39,14 +41,24 @@ DI (Driver)   -> GPIO 17 (TX2)
 DE/RE       -> GPIO 5
 ```
 
-### DHT11 Sensor
+### DHT22 Sensor
 
 ```
-DHT11      ESP32
+DHT22      ESP32
 -----      -----
 VCC     -> 3.3V
 DATA    -> GPIO 4
 GND     -> GND
+```
+
+### LDR Module
+
+```
+LDR Module   ESP32
+----------   -----
+VCC       -> 3.3V
+GND       -> GND
+AO        -> GPIO 33
 ```
 
 ### Soil Moisture Sensors
@@ -56,29 +68,43 @@ Soil Sensor 1  ESP32
 -------------  -----
 VCC         -> 3.3V
 GND         -> GND
-AO          -> GPIO 34 (VP)
+AO          -> GPIO 36 (VP)
 
 Soil Sensor 2  ESP32
 -------------  -----
 VCC         -> 3.3V
 GND         -> GND
-AO          -> GPIO 35 (VN)
+AO          -> GPIO 34
 
 Soil Sensor 3  ESP32
 -------------  -----
 VCC         -> 3.3V
 GND         -> GND
-AO          -> GPIO 32
+AO          -> GPIO 35
 ```
 
-### Relay Module (for actuators)
+### Relay Module 1 (LOW-trigger)
 
 ```
 Relay Module  ESP32
 ------------  -----
-IN1 (Fan)   -> GPIO 26
-IN2 (Pump)  -> GPIO 25
-IN3 (LED)   -> GPIO 27
+IN1 (LED)   -> GPIO 25
+IN2 (Fan)   -> GPIO 26
+IN3 (Pump)  -> GPIO 27
+IN4 (NC)    -> -
+VCC         -> 5V
+GND         -> GND
+```
+
+### Relay Module 2 (LOW-trigger)
+
+```
+Relay Module  ESP32
+------------  -----
+IN1 (Valve1)-> GPIO 21
+IN2 (Valve2)-> GPIO 22
+IN3 (Valve3)-> GPIO 23
+IN4 (NC)    -> -
 VCC         -> 5V
 GND         -> GND
 ```

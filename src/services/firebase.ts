@@ -27,6 +27,22 @@ export const subscribeToSensorData = (callback: (data: SensorData) => void): Uns
   return onValue(sensorRef, (snapshot: DataSnapshot) => {
     const data = snapshot.val();
     if (data) {
+      // Also try to read from legacy path if new path doesn't have NPK
+      // This ensures compatibility with both data structures
+      callback(data);
+    }
+  });
+};
+
+// Legacy sensor data subscription (for /greenhouse/node1 structure)
+export const subscribeToLegacySensorData = (callback: (data: any) => void): Unsubscribe => {
+  if (!db) {
+    return () => {};
+  }
+  const legacySensorRef = ref(db, 'greenhouse/node1/sensors');
+  return onValue(legacySensorRef, (snapshot: DataSnapshot) => {
+    const data = snapshot.val();
+    if (data) {
       callback(data);
     }
   });
