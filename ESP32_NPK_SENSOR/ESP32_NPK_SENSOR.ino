@@ -173,12 +173,12 @@ bool readNPKSensor() {
 // ============================================================
 //  Data Structures
 // ============================================================
-struct OverrideItem {
+typedef struct {
   String mode = "auto";
   bool value = false;
-};
+} OverrideItem;
 
-struct SensorData {
+typedef struct {
   float airTemp = NAN;
   float humidity = NAN;
   int soil1 = 0;
@@ -203,7 +203,7 @@ struct SensorData {
   bool outValve1 = false;
   bool outValve2 = false;
   bool outValve3 = false;
-};
+} SensorData;
 
 SensorData data;
 
