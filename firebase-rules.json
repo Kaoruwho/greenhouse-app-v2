@@ -1,0 +1,53 @@
+{
+  "rules": {
+    // Existing sensor data - open for development
+    "sensors": {
+      ".read": true,
+      ".write": true
+    },
+    "actuators": {
+      ".read": true,
+      ".write": true
+    },
+    "controlMode": {
+      ".read": true,
+      ".write": true
+    },
+    "snapshots": {
+      ".read": true,
+      ".write": true
+    },
+    "settings": {
+      ".read": true,
+      ".write": true
+    },
+    
+    // Legacy path for your ESP32
+    "greenhouse": {
+      ".read": true,
+      ".write": true
+    },
+    
+    // Notification tokens - allow app to save tokens
+    "notificationTokens": {
+      "$deviceId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    
+    // Device presence tracking
+    "devicePresence": {
+      "$deviceId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    
+    // Alert thresholds (if you add them to Firebase)
+    "alertThresholds": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

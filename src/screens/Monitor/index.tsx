@@ -266,13 +266,25 @@ const MonitorScreen: React.FC = () => {
         </View>
         <View style={[styles.modeToggle, { borderColor: colors.primary }]}>
           <TouchableOpacity
-            style={[styles.modeButton, { backgroundColor: controlMode?.isAuto ? colors.primary : 'transparent' }]}
+            style={[
+              styles.modeButton,
+              { 
+                backgroundColor: controlMode?.isAuto ? colors.primary : 'transparent',
+                borderRadius: 12,
+              }
+            ]}
             onPress={() => setControlMode(true)}
           >
             <Text style={[styles.modeButtonText, { color: controlMode?.isAuto ? '#fff' : colors.primary }]}>AUTO</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.modeButton, { backgroundColor: !controlMode?.isAuto ? colors.primary : 'transparent' }]}
+            style={[
+              styles.modeButton,
+              { 
+                backgroundColor: !controlMode?.isAuto ? colors.primary : 'transparent',
+                borderRadius: 12,
+              }
+            ]}
             onPress={() => setControlMode(false)}
           >
             <Text style={[styles.modeButtonText, { color: !controlMode?.isAuto ? '#fff' : colors.primary }]}>MANUAL</Text>
@@ -385,8 +397,8 @@ const styles = StyleSheet.create({
   timestamp: { fontSize: 12, marginTop: 16, textAlign: 'center' },
   noDataContainer: { alignItems: 'center', padding: 32, borderRadius: 16, gap: 12 },
   noDataText: { fontSize: 15, textAlign: 'center' },
-  modeToggle: { flexDirection: 'row', borderRadius: 14, borderWidth: 2 },
-  modeButton: { flex: 1, padding: 16, alignItems: 'center' },
+  modeToggle: { flexDirection: 'row', borderRadius: 14, borderWidth: 2, overflow: 'hidden' },
+  modeButton: { flex: 1, padding: 16, alignItems: 'center', overflow: 'hidden' },
   modeButtonText: { fontSize: 15, fontWeight: '800', letterSpacing: 1 },
   manualModeHint: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 12, marginBottom: 16, gap: 10 },
   manualModeHintText: { fontSize: 14, fontWeight: '600', color: '#fff', flex: 1, flexShrink: 1 },
