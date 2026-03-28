@@ -30,7 +30,7 @@
 
 // ================= TIMING =================
 const unsigned long SENSOR_INTERVAL_MS   = 2000;
-const unsigned long FIREBASE_PUSH_MS     = 1000;
+const unsigned long FIREBASE_PUSH_MS     = 5000;  // Push every 5 seconds
 const unsigned long NPK_READ_INTERVAL_MS = 10000;
 const unsigned long PLANT_POLL_MS        = 5000;
 const unsigned long MODE_POLL_MS         = 500;  // Check manual/auto mode
@@ -248,32 +248,50 @@ void pollPlantSelectionAndProfile() {
 // ================= FIREBASE PUSH =================
 
 void pushToFirebase() {
-  // Sensors - always push
-  Firebase.RTDB.setFloat(&fbdo, "/sensors/temperature",       data.airTemp);
-  Firebase.RTDB.setFloat(&fbdo, "/sensors/humidity",          data.humidity);
-  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot1", data.soil1);
-  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot2", data.soil2);
-  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot3", data.soil3);
-
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/nitrogen",    data.npkNitrogen);
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/phosphorus",  data.npkPhosphorus);       
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/potassium",   data.npkPotassium);        
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/nitrogen",    data.npkNitrogen);
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/phosphorus",  data.npkPhosphorus);       
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/potassium",   data.npkPotassium);        
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/nitrogen",    data.npkNitrogen);
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/phosphorus",  data.npkPhosphorus);       
-  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/potassium",   data.npkPotassium);        
-  Firebase.RTDB.setInt(&fbdo, "/sensors/timestamp",            (int)millis());
-
-  // Actuators - ONLY push when in AUTO mode (don't overwrite manual values)
+  // Batch all sensor data into single JSON object
+  StaticJsonDocument<512> sensorDoc;
+  sensorDoc["temperature"] = data.airTemp;
+  sensorDoc["humidity"] = data.humidity;
+  sensorDoc["timestamp"] = (int)millis();
+  
+  // Soil moisture
+  JsonObject soilMoisture = sensorDoc.createNestedObject("soilMoisture");
+  soilMoisture["pot1"] = data.soil1;
+  soilMoisture["pot2"] = data.soil2;
+  soilMoisture["pot3"] = data.soil3;
+  
+  // NPK data
+  JsonObject npk = sensorDoc.createNestedObject("npk");
+  
+  JsonObject pot1 = npk.createNestedObject("pot1");
+  pot1["nitrogen"] = data.npkNitrogen;
+  pot1["phosphorus"] = data.npkPhosphorus;
+  pot1["potassium"] = data.npkPotassium;
+  
+  JsonObject pot2 = npk.createNestedObject("pot2");
+  pot2["nitrogen"] = data.npkNitrogen;
+  pot2["phosphorus"] = data.npkPhosphorus;
+  pot2["potassium"] = data.npkPotassium;
+  
+  JsonObject pot3 = npk.createNestedObject("pot3");
+  pot3["nitrogen"] = data.npkNitrogen;
+  pot3["phosphorus"] = data.npkPhosphorus;
+  pot3["potassium"] = data.npkPotassium;
+  
+  // Push sensors in single call
+  Firebase.RTDB.setJSON(&fbdo, "/sensors", &sensorDoc);
+  
+  // Push actuators only in auto mode
   if (isAutoMode) {
-    Firebase.RTDB.setBool(&fbdo, "/actuators/fan",      data.outFan);        
-    Firebase.RTDB.setBool(&fbdo, "/actuators/pump",     data.outPump);       
-    Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);
+    StaticJsonDocument<128> actuatorDoc;
+    actuatorDoc["fan"] = data.outFan;
+    actuatorDoc["pump"] = data.outPump;
+    actuatorDoc["ledLight"] = data.outLed;
+    
+    Firebase.RTDB.setJSON(&fbdo, "/actuators", &actuatorDoc);
   }
-
-  Serial.println("Firebase pushed.");
+  
+  Serial.println("Firebase pushed (batched JSON).");
 }
 
 // ================= PIN SETUP =================
