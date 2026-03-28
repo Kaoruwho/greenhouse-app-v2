@@ -169,7 +169,7 @@ void relayWrite(int pin, bool on) {
 }
 
 String controlBase(const char* name) {
-  return String("/greenhouse/node1/controls/") + name;
+  return String("/controls/") + name;
 }
 
 // ================= FIREBASE HELPERS =================
@@ -222,7 +222,7 @@ bool applyOverride(const OverrideItem& ov, bool autoValue) {
 // ================= PLANT PROFILE FUNCTIONS =================
 
 void loadPlantProfileByKey(const String& plantKey) {
-  String base = "/greenhouse/node1/plant/profiles/" + plantKey;
+  String base = "/plant/profiles/" + plantKey;
   getIntPath(base   + "/soilWaterThreshold", soilWaterThreshold);
   getFloatPath(base + "/fanTempOn",          fanTempOn);
   getFloatPath(base + "/fanTempOff",         fanTempOff);
@@ -239,7 +239,7 @@ void loadPlantProfileByKey(const String& plantKey) {
 
 void pollPlantSelectionAndProfile() {
   String newPlant;
-  if (getStringPath("/greenhouse/node1/plant/selected", newPlant)) {
+  if (getStringPath("/plant/selected", newPlant)) {
     newPlant.toLowerCase();
     if (newPlant.length() > 0 && newPlant != selectedPlant) {
       selectedPlant = newPlant;
@@ -325,7 +325,7 @@ void setupWiFiFirebase() {
   Serial.println("Firebase Ready");
 
   String initPlant;
-  if (getStringPath("/greenhouse/node1/plant/selected", initPlant) && initPlant.length() > 0) {
+  if (getStringPath("/plant/selected", initPlant) && initPlant.length() > 0) {
     selectedPlant = initPlant;
   }
   loadPlantProfileByKey(selectedPlant);
