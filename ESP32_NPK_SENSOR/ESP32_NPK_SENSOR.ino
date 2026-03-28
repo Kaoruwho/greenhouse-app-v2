@@ -49,7 +49,7 @@
 #define RS485_TX_PIN   17
 #define RS485_RX_PIN   16
 #define RS485_DE_RE_PIN 18  // Updated from your working code
-ModbusMaster node;
+
 
 // ================= CALIBRATION =================
 #define DRY_VALUE 3000

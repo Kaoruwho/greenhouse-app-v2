@@ -104,15 +104,15 @@ npx expo start
 
 ### AI Assistant Tab
 - ✅ AI Chat for general greenhouse questions
+- ✅ **NPK Soil Analysis** - Get fertilizer recommendations based on NPK sensor data
 - ✅ Soil recommendation powered by Groq AI
 - ✅ Conversation history
 - ✅ Quick action buttons
-- ✅ Recommendation history tracking
+- ✅ Recommendation history with NPK values
 
 ### Camera Tab
-- ✅ Latest snapshot from greenhouse camera
-- ✅ Image gallery with timestamps
-- ✅ Growth tracking info
+- 📷 Placeholder for future camera integration
+- Ready for ESP32-CAM or IP camera setup
 
 ### Settings Tab
 - ✅ Light/Dark mode toggle
@@ -134,6 +134,13 @@ greenhouse-67568-default-rtdb/
 │   │   ├── pot1: number
 │   │   ├── pot2: number
 │   │   └── pot3: number
+│   ├── npk/                    # NPK sensor data (NEW!)
+│   │   ├── pot1/
+│   │   │   ├── nitrogen: number
+│   │   │   ├── phosphorus: number
+│   │   │   └── potassium: number
+│   │   ├── pot2/
+│   │   └── pot3/
 │   └── timestamp: number
 ├── actuators/
 │   ├── fan: boolean
@@ -151,6 +158,8 @@ greenhouse-67568-default-rtdb/
 
 ### ESP32/Arduino Integration
 See **FIREBASE_SETUP.md** for complete ESP32 code and setup instructions.
+
+**For NPK Sensor Setup:** See **NPK_SENSOR_SETUP.md** for wiring diagrams and Modbus configuration.
 
 ---
 
@@ -214,14 +223,18 @@ greenhouse-app-v2/
 │   │   └── Settings/
 │   ├── services/           # API & Firebase services
 │   │   ├── firebase.ts
-│   │   └── groq.ts
+│   │   ├── groq.ts
+│   │   └── notifications.ts
 │   ├── theme/              # Theme configuration
 │   │   ├── colors.ts
 │   │   └── ThemeContext.tsx
-│   ├── types/              # TypeScript type definitions
-│   │   └── index.ts
-│   └── utils/              # Utility functions
+│   └── types/              # TypeScript type definitions
+│       └── index.ts
+├── ESP32_NPK_SENSOR/       # ESP32 code with NPK support
+│   └── ESP32_NPK_SENSOR.ino
 ├── FIREBASE_SETUP.md       # Detailed Firebase guide
+├── NPK_SENSOR_SETUP.md     # NPK sensor wiring & setup (NEW!)
+├── PUSH_NOTIFICATIONS_SETUP.md
 ├── push-test-data.js       # Test data script
 ├── app.json               # Expo configuration
 └── package.json           # Dependencies
