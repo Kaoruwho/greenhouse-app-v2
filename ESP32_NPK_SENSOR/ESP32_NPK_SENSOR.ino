@@ -174,40 +174,68 @@ bool readNPKSensor() {
 //  Data Structures
 // ============================================================
 typedef struct {
-  String mode = "auto";
-  bool value = false;
+  String mode;
+  bool value;
 } OverrideItem;
 
 typedef struct {
-  float airTemp = NAN;
-  float humidity = NAN;
-  int soil1 = 0;
-  int soil2 = 0;
-  int soil3 = 0;
-  int lightRaw = 0;
-
-  int npkNitrogen = 0;
-  int npkPhosphorus = 0;
-  int npkPotassium = 0;
-
-  bool fan = false;
-  bool pump = false;
-  bool led = false;
-  bool valve1 = false;
-  bool valve2 = false;
-  bool valve3 = false;
-
-  bool outFan = false;
-  bool outPump = false;
-  bool outLed = false;
-  bool outValve1 = false;
-  bool outValve2 = false;
-  bool outValve3 = false;
+  float airTemp;
+  float humidity;
+  int soil1;
+  int soil2;
+  int soil3;
+  int lightRaw;
+  int npkNitrogen;
+  int npkPhosphorus;
+  int npkPotassium;
+  bool fan;
+  bool pump;
+  bool led;
+  bool valve1;
+  bool valve2;
+  bool valve3;
+  bool outFan;
+  bool outPump;
+  bool outLed;
+  bool outValve1;
+  bool outValve2;
+  bool outValve3;
 } SensorData;
 
 SensorData data;
-
 OverrideItem ovLed, ovFan, ovPump, ovV1, ovV2, ovV3;
+
+// Initialize defaults
+void initData() {
+  data.airTemp = NAN;
+  data.humidity = NAN;
+  data.soil1 = 0;
+  data.soil2 = 0;
+  data.soil3 = 0;
+  data.lightRaw = 0;
+  data.npkNitrogen = 0;
+  data.npkPhosphorus = 0;
+  data.npkPotassium = 0;
+  data.fan = false;
+  data.pump = false;
+  data.led = false;
+  data.valve1 = false;
+  data.valve2 = false;
+  data.valve3 = false;
+  data.outFan = false;
+  data.outPump = false;
+  data.outLed = false;
+  data.outValve1 = false;
+  data.outValve2 = false;
+  data.outValve3 = false;
+  
+  ovLed.mode = "auto"; ovLed.value = false;
+  ovFan.mode = "auto"; ovFan.value = false;
+  ovPump.mode = "auto"; ovPump.value = false;
+  ovV1.mode = "auto"; ovV1.value = false;
+  ovV2.mode = "auto"; ovV2.value = false;
+  ovV3.mode = "auto"; ovV3.value = false;
+}
 
 // ============================================================
 //  Helpers
@@ -428,17 +456,18 @@ void setupWiFiFirebase() {
 void setup() {
   Serial.begin(115200);
 
+  initData();  // Initialize data structures
   setupPins();
   dht.begin();
-  
+
   // Initialize RS485 for NPK sensor (4800 baud from your working code)
   NPKSerial.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
   pinMode(RS485_DE_RE_PIN, OUTPUT);
   digitalWrite(RS485_DE_RE_PIN, LOW);
-  
+
   Serial.println("NPK Sensor initialized");
   setupWiFiFirebase();
-  
+
   Serial.println("=== ESP32 Greenhouse with NPK Sensor Started ===");
 }
 
