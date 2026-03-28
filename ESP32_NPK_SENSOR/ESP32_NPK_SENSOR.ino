@@ -251,26 +251,27 @@ void pollPlantSelectionAndProfile() {
 // ================= FIREBASE PUSH =================
 
 void pushToFirebase() {
-  // Main structure: /greenhouse/node1/
-  Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/airTemp",       data.airTemp); 
-  Firebase.RTDB.setFloat(&fbdo, "/greenhouse/node1/sensors/humidity",      data.humidity);
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/soil1",         data.soil1);   
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/soil2",         data.soil2);   
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/soil3",         data.soil3);   
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/lightRaw",      data.lightRaw);
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/npkNitrogen",   data.npkNitrogen);
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/npkPhosphorus", data.npkPhosphorus);
-  Firebase.RTDB.setInt(&fbdo,   "/greenhouse/node1/sensors/npkPotassium",  data.npkPotassium);
+  // Mobile app structure: /sensors/ and /actuators/
+  Firebase.RTDB.setFloat(&fbdo, "/sensors/temperature",       data.airTemp);
+  Firebase.RTDB.setFloat(&fbdo, "/sensors/humidity",          data.humidity);
+  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot1", data.soil1);
+  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot2", data.soil2);
+  Firebase.RTDB.setInt(&fbdo,   "/sensors/soilMoisture/pot3", data.soil3);
 
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/fan",    data.outFan);        
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/pump",   data.outPump);       
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/led",    data.outLed);        
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve1", data.outValve1);     
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve2", data.outValve2);     
-  Firebase.RTDB.setBool(&fbdo, "/greenhouse/node1/actuators/valve3", data.outValve3);     
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/nitrogen",    data.npkNitrogen);
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/phosphorus",  data.npkPhosphorus);       
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot1/potassium",   data.npkPotassium);        
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/nitrogen",    data.npkNitrogen);
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/phosphorus",  data.npkPhosphorus);       
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot2/potassium",   data.npkPotassium);        
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/nitrogen",    data.npkNitrogen);
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/phosphorus",  data.npkPhosphorus);       
+  Firebase.RTDB.setInt(&fbdo, "/sensors/npk/pot3/potassium",   data.npkPotassium);        
+  Firebase.RTDB.setInt(&fbdo, "/sensors/timestamp",            (int)millis());
 
-  Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/system/lastSeenMs", (int)millis());      
-  Firebase.RTDB.setInt(&fbdo, "/greenhouse/node1/system/lastPushMs", (int)millis());      
+  Firebase.RTDB.setBool(&fbdo, "/actuators/fan",      data.outFan);        
+  Firebase.RTDB.setBool(&fbdo, "/actuators/pump",     data.outPump);       
+  Firebase.RTDB.setBool(&fbdo, "/actuators/ledLight", data.outLed);        
 
   Serial.println("Firebase pushed.");
 }
