@@ -1,6 +1,6 @@
 // ============================================================
 //  ESP32 NPK Sensor + DHT22 + LDR + Soil Moisture + Firebase
-//  Based on sketch_feb24b.ino with NPK support
+//  Based on sketch_feb24b.ino + npk_groq_test.ino
 // ============================================================
 //  Hardware:
 //    - DHT22: GPIO 4
@@ -12,14 +12,12 @@
 //  Libraries (install via Arduino Library Manager):
 //    - Firebase_ESP_Client by Mobizt (v3.5.5+)
 //    - DHT sensor library by Adafruit
-//    - ModbusMaster by Doc Walker
 //    - ArduinoJson by Benoit Blanchon (v6.x)
 // ============================================================
 
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
 #include <DHT.h>
-#include <ModbusMaster.h>
 #include <ArduinoJson.h>
 
 // ============================================================
@@ -92,16 +90,11 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-ModbusMaster node;
+HardwareSerial NPKSerial(2);
 
 // ============================================================
 //  NPK Sensor
 // ============================================================
-#define NPK_SLAVE_ID 1
-#define NPK_NITROGEN_REG    0x001E
-#define NPK_PHOSPHORUS_REG  0x001F
-#define NPK_POTASSIUM_REG   0x0020
-
 struct NPKReading {
   int nitrogen = 0;
   int phosphorus = 0;
@@ -111,37 +104,70 @@ struct NPKReading {
 NPKReading npkData = {0, 0, 0};
 unsigned long lastNPKRead = 0;
 
-// RS485 transceiver control
-void preTransmission() {
-  digitalWrite(RS485_DE_RE_PIN, HIGH);
+// Modbus RTU query — Read N, P, K (device ID: 0x01)
+const byte NPK_QUERY[] = {0x01, 0x03, 0x00, 0x1E, 0x00, 0x03, 0x65, 0xCD};
+
+// ============================================================
+//  CRC16 Modbus
+// ============================================================
+uint16_t calculateCRC(const byte* data, uint8_t len) {
+  uint16_t crc = 0xFFFF;
+  for (uint8_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t j = 0; j < 8; j++) {
+      crc = (crc & 0x0001) ? (crc >> 1) ^ 0xA001 : crc >> 1;
+    }
+  }
+  return crc;
 }
 
-void postTransmission() {
+// ============================================================
+//  Send RS485 query
+// ============================================================
+void sendQuery(const byte* query, uint8_t len) {
+  digitalWrite(RS485_DE_RE_PIN, HIGH);
+  delayMicroseconds(500);
+  NPKSerial.write(query, len);
+  NPKSerial.flush();
+  delayMicroseconds(500);
   digitalWrite(RS485_DE_RE_PIN, LOW);
 }
 
-NPKReading readNPKSensor() {
-  NPKReading npk = {0, 0, 0};
-  uint8_t result;
-  
-  result = node.readInputRegisters(NPK_NITROGEN_REG, 1);
-  if (result == node.ku8MBSuccess) {
-    npk.nitrogen = node.getResponseBuffer(0);
-  }
+// ============================================================
+//  Read NPK sensor
+// ============================================================
+bool readNPKSensor() {
+  while (NPKSerial.available()) NPKSerial.read(); // flush buffer
+
+  sendQuery(NPK_QUERY, sizeof(NPK_QUERY));
   delay(100);
-  
-  result = node.readInputRegisters(NPK_PHOSPHORUS_REG, 1);
-  if (result == node.ku8MBSuccess) {
-    npk.phosphorus = node.getResponseBuffer(0);
+
+  uint8_t response[11];
+  uint8_t bytesRead = 0;
+  unsigned long start = millis();
+
+  while (bytesRead < 11 && millis() - start < 500) {
+    if (NPKSerial.available()) response[bytesRead++] = NPKSerial.read();
   }
-  delay(100);
-  
-  result = node.readInputRegisters(NPK_POTASSIUM_REG, 1);
-  if (result == node.ku8MBSuccess) {
-    npk.potassium = node.getResponseBuffer(0);
+
+  if (bytesRead < 9) {
+    Serial.println("[NPK ERROR] Incomplete response.");
+    return false;
   }
+
+  uint16_t receivedCRC   = (response[bytesRead-1] << 8) | response[bytesRead-2];
+  uint16_t calculatedCRC = calculateCRC(response, bytesRead - 2);
+  if (receivedCRC != calculatedCRC) {
+    Serial.printf("[NPK ERROR] CRC mismatch. Got:0x%04X Expected:0x%04X\n",
+                  receivedCRC, calculatedCRC);
+    return false;
+  }
+
+  npkData.nitrogen   = (response[3] << 8) | response[4];
+  npkData.phosphorus = (response[5] << 8) | response[6];
+  npkData.potassium  = (response[7] << 8) | response[8];
   
-  return npk;
+  return true;
 }
 
 // ============================================================
@@ -405,11 +431,10 @@ void setup() {
   setupPins();
   dht.begin();
   
-  // Initialize RS485 for NPK sensor
-  Serial2.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
-  node.begin(NPK_SLAVE_ID, Serial2);
-  node.preTransmission(preTransmission);
-  node.postTransmission(postTransmission);
+  // Initialize RS485 for NPK sensor (4800 baud from your working code)
+  NPKSerial.begin(4800, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+  pinMode(RS485_DE_RE_PIN, OUTPUT);
+  digitalWrite(RS485_DE_RE_PIN, LOW);
   
   Serial.println("NPK Sensor initialized");
   setupWiFiFirebase();
@@ -462,14 +487,16 @@ void loop() {
     
     // Read NPK sensor every 10 seconds
     if (now - lastNPKRead >= NPK_READ_INTERVAL_MS) {
-      npkData = readNPKSensor();
-      data.npkNitrogen = npkData.nitrogen;
-      data.npkPhosphorus = npkData.phosphorus;
-      data.npkPotassium = npkData.potassium;
+      if (readNPKSensor()) {
+        data.npkNitrogen = npkData.nitrogen;
+        data.npkPhosphorus = npkData.phosphorus;
+        data.npkPotassium = npkData.potassium;
+        Serial.printf("NPK | N: %d mg/kg, P: %d mg/kg, K: %d mg/kg\n", 
+          data.npkNitrogen, data.npkPhosphorus, data.npkPotassium);
+      } else {
+        Serial.println("NPK | Failed to read sensor");
+      }
       lastNPKRead = now;
-      
-      Serial.printf("NPK | N: %d mg/kg, P: %d mg/kg, K: %d mg/kg\n", 
-        data.npkNitrogen, data.npkPhosphorus, data.npkPotassium);
     }
 
     // Fan control with hysteresis
