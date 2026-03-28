@@ -72,8 +72,9 @@ struct SensorData {
 };
 
 struct OverrideItem {
-  String mode  = "auto";
-  bool   value = false;
+  String mode       = "auto";
+  bool   value      = false;
+  bool   lastAuto   = false;  // Store last auto state for smooth transition
 };
 
 struct NPKReading {
@@ -202,15 +203,24 @@ bool getStringPath(const String& path, String& out) {
 
 bool readOverride(const char* name, OverrideItem& ov) {
   String modePath = controlBase(name) + "/mode";
+  String prevMode = ov.mode;  // Store previous mode
+  
   if (Firebase.RTDB.getString(&fbdo, modePath.c_str())) {
     String m = fbdo.stringData();
     m.toLowerCase();
     if (m == "auto" || m == "manual") ov.mode = m;
   }
+  
   String valuePath = controlBase(name) + "/value";
   if (Firebase.RTDB.getBool(&fbdo, valuePath.c_str())) {
     ov.value = fbdo.boolData();
   }
+  
+  // When switching from auto to manual, capture current auto state
+  if (prevMode == "auto" && ov.mode == "manual") {
+    ov.value = ov.lastAuto;  // Use the last auto state as manual value
+  }
+  
   return true;
 }
 
@@ -431,6 +441,14 @@ void loop() {
       }
       data.led = ledState;
     }
+
+    // Store last auto states BEFORE applying overrides
+    ovFan.lastAuto   = data.fan;
+    ovPump.lastAuto  = data.pump;
+    ovLed.lastAuto   = data.led;
+    ovV1.lastAuto    = data.valve1;
+    ovV2.lastAuto    = data.valve2;
+    ovV3.lastAuto    = data.valve3;
 
     // Apply overrides - manual mode uses the manual value directly
     data.outLed = applyOverride(ovLed, data.led);
