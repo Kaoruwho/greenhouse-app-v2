@@ -248,45 +248,51 @@ void pollPlantSelectionAndProfile() {
 // ================= FIREBASE PUSH =================
 
 void pushToFirebase() {
-  // Batch all sensor data into single JSON object
-  StaticJsonDocument<512> sensorDoc;
-  sensorDoc["temperature"] = data.airTemp;
-  sensorDoc["humidity"] = data.humidity;
-  sensorDoc["timestamp"] = (int)millis();
+  // Batch all sensor data into single FirebaseJson object
+  FirebaseJson sensorDoc;
+  sensorDoc.set("temperature", data.airTemp);
+  sensorDoc.set("humidity", data.humidity);
+  sensorDoc.set("timestamp", (int)millis());
   
   // Soil moisture
-  JsonObject soilMoisture = sensorDoc.createNestedObject("soilMoisture");
-  soilMoisture["pot1"] = data.soil1;
-  soilMoisture["pot2"] = data.soil2;
-  soilMoisture["pot3"] = data.soil3;
+  FirebaseJson soilMoisture;
+  soilMoisture.set("pot1", data.soil1);
+  soilMoisture.set("pot2", data.soil2);
+  soilMoisture.set("pot3", data.soil3);
+  sensorDoc.set("soilMoisture", soilMoisture);
   
   // NPK data
-  JsonObject npk = sensorDoc.createNestedObject("npk");
+  FirebaseJson npk;
   
-  JsonObject pot1 = npk.createNestedObject("pot1");
-  pot1["nitrogen"] = data.npkNitrogen;
-  pot1["phosphorus"] = data.npkPhosphorus;
-  pot1["potassium"] = data.npkPotassium;
+  FirebaseJson pot1;
+  pot1.set("nitrogen", data.npkNitrogen);
+  pot1.set("phosphorus", data.npkPhosphorus);
+  pot1.set("potassium", data.npkPotassium);
+  npk.set("pot1", pot1);
   
-  JsonObject pot2 = npk.createNestedObject("pot2");
-  pot2["nitrogen"] = data.npkNitrogen;
-  pot2["phosphorus"] = data.npkPhosphorus;
-  pot2["potassium"] = data.npkPotassium;
+  FirebaseJson pot2;
+  pot2.set("nitrogen", data.npkNitrogen);
+  pot2.set("phosphorus", data.npkPhosphorus);
+  pot2.set("potassium", data.npkPotassium);
+  npk.set("pot2", pot2);
   
-  JsonObject pot3 = npk.createNestedObject("pot3");
-  pot3["nitrogen"] = data.npkNitrogen;
-  pot3["phosphorus"] = data.npkPhosphorus;
-  pot3["potassium"] = data.npkPotassium;
+  FirebaseJson pot3;
+  pot3.set("nitrogen", data.npkNitrogen);
+  pot3.set("phosphorus", data.npkPhosphorus);
+  pot3.set("potassium", data.npkPotassium);
+  npk.set("pot3", pot3);
+  
+  sensorDoc.set("npk", npk);
   
   // Push sensors in single call
   Firebase.RTDB.setJSON(&fbdo, "/sensors", &sensorDoc);
   
   // Push actuators only in auto mode
   if (isAutoMode) {
-    StaticJsonDocument<128> actuatorDoc;
-    actuatorDoc["fan"] = data.outFan;
-    actuatorDoc["pump"] = data.outPump;
-    actuatorDoc["ledLight"] = data.outLed;
+    FirebaseJson actuatorDoc;
+    actuatorDoc.set("fan", data.outFan);
+    actuatorDoc.set("pump", data.outPump);
+    actuatorDoc.set("ledLight", data.outLed);
     
     Firebase.RTDB.setJSON(&fbdo, "/actuators", &actuatorDoc);
   }
