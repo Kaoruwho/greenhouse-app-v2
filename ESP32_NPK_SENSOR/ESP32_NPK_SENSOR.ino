@@ -72,9 +72,8 @@ struct SensorData {
 };
 
 struct OverrideItem {
-  String mode       = "auto";
-  bool   value      = false;
-  bool   lastAuto   = false;  // Store last auto state for smooth transition
+  String mode  = "auto";
+  bool   value = false;
 };
 
 struct NPKReading {
@@ -203,24 +202,15 @@ bool getStringPath(const String& path, String& out) {
 
 bool readOverride(const char* name, OverrideItem& ov) {
   String modePath = controlBase(name) + "/mode";
-  String prevMode = ov.mode;  // Store previous mode
-  
   if (Firebase.RTDB.getString(&fbdo, modePath.c_str())) {
     String m = fbdo.stringData();
     m.toLowerCase();
     if (m == "auto" || m == "manual") ov.mode = m;
   }
-  
   String valuePath = controlBase(name) + "/value";
   if (Firebase.RTDB.getBool(&fbdo, valuePath.c_str())) {
     ov.value = fbdo.boolData();
   }
-  
-  // When switching from auto to manual, capture current auto state
-  if (prevMode == "auto" && ov.mode == "manual") {
-    ov.value = ov.lastAuto;  // Use the last auto state as manual value
-  }
-  
   return true;
 }
 
@@ -382,7 +372,7 @@ void loop() {
       ovV1.mode.c_str(), ovV2.mode.c_str(), ovV3.mode.c_str());
   }
 
-  // Read sensors + auto logic (only when in AUTO mode)
+  // Read sensors + auto logic (auto logic ALWAYS runs, override decides what to use)
   if (now - lastSensor >= SENSOR_INTERVAL_MS) {
     lastSensor = now;
 
@@ -393,7 +383,7 @@ void loop() {
     data.soil2    = readSoilPct(SOIL2_PIN);
     data.soil3    = readSoilPct(SOIL3_PIN);
 
-    // NPK every 10s (always read, even in manual)
+    // NPK every 10s
     if (now - lastNPKRead >= NPK_READ_INTERVAL_MS) {
       if (readNPKSensor()) {
         data.npkNitrogen   = npkData.nitrogen;
@@ -407,50 +397,35 @@ void loop() {
       lastNPKRead = now;
     }
 
-    // Fan hysteresis - ONLY in AUTO mode
-    if (ovFan.mode == "auto") {
-      static bool fanState = false;
-      if (isnan(data.airTemp) || isnan(data.humidity)) {
-        fanState = false;
+    // Fan hysteresis (ALWAYS runs, static preserves state)
+    static bool fanState = false;
+    if (isnan(data.airTemp) || isnan(data.humidity)) {
+      fanState = false;
+    } else {
+      if (fanState) {
+        if (data.airTemp <= fanTempOff && data.humidity <= fanHumOff) fanState = false;
       } else {
-        if (fanState) {
-          if (data.airTemp <= fanTempOff && data.humidity <= fanHumOff) fanState = false;
-        } else {
-          if (data.airTemp >= fanTempOn  || data.humidity >= fanHumOn)  fanState = true;
-        }
+        if (data.airTemp >= fanTempOn  || data.humidity >= fanHumOn)  fanState = true;
       }
-      data.fan = fanState;
     }
+    data.fan = fanState;
 
-    // Valves + pump - ONLY in AUTO mode
-    if (ovV1.mode == "auto") data.valve1 = data.soil1 < soilWaterThreshold;
-    if (ovV2.mode == "auto") data.valve2 = data.soil2 < soilWaterThreshold;
-    if (ovV3.mode == "auto") data.valve3 = data.soil3 < soilWaterThreshold;
-    
-    if (ovPump.mode == "auto") {
-      data.pump = data.valve1 || data.valve2 || data.valve3;
+    // Valves + pump (ALWAYS run)
+    data.valve1 = data.soil1 < soilWaterThreshold;
+    data.valve2 = data.soil2 < soilWaterThreshold;
+    data.valve3 = data.soil3 < soilWaterThreshold;
+    data.pump   = data.valve1 || data.valve2 || data.valve3;
+
+    // LED hysteresis (ALWAYS runs, static preserves state)
+    static bool ledState = false;
+    if (ledState) {
+      if (data.lightRaw < lightDarkExit)  ledState = false;
+    } else {
+      if (data.lightRaw > lightDarkEnter) ledState = true;
     }
+    data.led = ledState;
 
-    // LED hysteresis - ONLY in AUTO mode
-    if (ovLed.mode == "auto") {
-      static bool ledState = false;
-      if (ledState) {
-        if (data.lightRaw < lightDarkExit)  ledState = false;
-      } else {
-        if (data.lightRaw > lightDarkEnter) ledState = true;
-      }
-      data.led = ledState;
-    }
-
-    // Store last auto states BEFORE applying overrides
-    ovFan.lastAuto   = data.fan;
-    ovPump.lastAuto  = data.pump;
-    ovLed.lastAuto   = data.led;
-    ovV1.lastAuto    = data.valve1;
-    ovV2.lastAuto    = data.valve2;
-    ovV3.lastAuto    = data.valve3;
-
-    // Apply overrides - manual mode uses the manual value directly
+    // Apply overrides - manual uses ov.value, auto uses calculated state
     data.outLed = applyOverride(ovLed, data.led);
     data.outFan = applyOverride(ovFan, data.fan);
 
@@ -494,9 +469,9 @@ void loop() {
     Serial.printf("FINAL  led:%d fan:%d pump:%d v1:%d v2:%d v3:%d\n",
       data.outLed, data.outFan, data.outPump,
       data.outValve1, data.outValve2, data.outValve3);
-    Serial.printf("OVR    led:%s fan:%s pump:%s v1:%s v2:%s v3:%s\n\n",
-      ovLed.mode.c_str(), ovFan.mode.c_str(), ovPump.mode.c_str(),
-      ovV1.mode.c_str(), ovV2.mode.c_str(), ovV3.mode.c_str());
+    Serial.printf("OVR    led:%s(%d) fan:%s(%d) pump:%s(%d) v1:%s(%d) v2:%s(%d) v3:%s(%d)\n\n",
+      ovLed.mode.c_str(), ovLed.value, ovFan.mode.c_str(), ovFan.value, ovPump.mode.c_str(), ovPump.value,
+      ovV1.mode.c_str(), ovV1.value, ovV2.mode.c_str(), ovV2.value, ovV3.mode.c_str(), ovV3.value);
   }
 
   // Push to Firebase
