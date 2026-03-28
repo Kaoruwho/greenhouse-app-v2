@@ -173,6 +173,11 @@ bool readNPKSensor() {
 // ============================================================
 //  Data Structures
 // ============================================================
+struct OverrideItem {
+  String mode = "auto";
+  bool value = false;
+};
+
 struct SensorData {
   float airTemp = NAN;
   float humidity = NAN;
@@ -180,7 +185,7 @@ struct SensorData {
   int soil2 = 0;
   int soil3 = 0;
   int lightRaw = 0;
-  
+
   int npkNitrogen = 0;
   int npkPhosphorus = 0;
   int npkPotassium = 0;
@@ -201,11 +206,6 @@ struct SensorData {
 };
 
 SensorData data;
-
-struct OverrideItem {
-  String mode = "auto";
-  bool value = false;
-};
 
 OverrideItem ovLed, ovFan, ovPump, ovV1, ovV2, ovV3;
 
